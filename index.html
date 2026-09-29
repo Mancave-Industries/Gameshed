@@ -100,6 +100,13 @@ footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font:50
 .coffee:hover,.coffee:focus-visible{transform:translateY(-2px)}
 .coffee:focus-visible{outline:3px solid var(--steel);outline-offset:3px}
 @media (prefers-reduced-motion:reduce){.coffee{transition:none}.coffee:hover{transform:none}}
+
+.tip{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:14px 26px 12px;border-radius:6px;background:var(--red);color:#fff;font:400 1.35rem/1 var(--display);letter-spacing:.06em;text-decoration:none;white-space:nowrap;border:2px solid #fff2;box-shadow:0 6px 0 #7d1f18,0 10px 24px rgba(0,0,0,.5);transform:rotate(-1.5deg);transition:transform .15s ease,box-shadow .15s ease}
+.tip:hover,.tip:focus-visible{transform:rotate(-1.5deg) translateY(-2px);box-shadow:0 8px 0 #7d1f18,0 14px 28px rgba(0,0,0,.55)}
+.tip:active{transform:rotate(-1.5deg) translateY(4px);box-shadow:0 2px 0 #7d1f18,0 4px 10px rgba(0,0,0,.5)}
+.tip:focus-visible{outline:3px solid var(--steel);outline-offset:4px}
+.head-text .tip{justify-self:start;margin-top:6px}
+@media (prefers-reduced-motion:reduce){.tip{transition:none}}
 </style>
 </head>
 <body>
@@ -111,6 +118,7 @@ footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font:50
       <div class="maker">Mancave Industries · Gameshed Div.</div>
       <h1>Game <span>Shed</span></h1>
       <p class="lede">Puzzles, word games and party deduction, built in the shed. Free to play in your browser, on your phone or at the table.</p>
+      <a class="tip" href="https://buymeacoffee.com/mancaveman6" target="_blank" rel="noopener">Send a Tip</a>
     </div>
   </header>
 
@@ -153,8 +161,8 @@ footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font:50
   </main>
 
   <section class="support" aria-label="Support Game Shed">
-    <p><strong>Enjoying the games?</strong>Everything here is free and built in the shed after hours. If one made your day, you can buy me a coffee.</p>
-    <a class="coffee" href="https://buymeacoffee.com/mancaveman6" target="_blank" rel="noopener">&#9749; Buy me a coffee</a>
+    <p><strong>Enjoying the games?</strong>Everything here is free and built in the shed after hours. If one made your day, send a tip.</p>
+    <a class="tip" href="https://buymeacoffee.com/mancaveman6" target="_blank" rel="noopener">Send a Tip</a>
   </section>
 
   <footer>
