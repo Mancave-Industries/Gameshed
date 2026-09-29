@@ -32,7 +32,7 @@
 *{box-sizing:border-box}
 body{
   margin:0;background-color:var(--board);color:var(--steel);font:400 1rem/1.55 var(--body);
-  --art:url("assets/shed-art-v2.webp");--art-w:max(100%,1100px);
+  --art:url("assets/shed-art-v3.webp");--art-w:max(100%,1100px);
   background-image:
     var(--art),
     radial-gradient(circle at center,var(--hole) 0 3px,transparent 3.5px);
@@ -50,7 +50,7 @@ header{display:grid;grid-template-columns:auto 1fr;gap:clamp(18px,4vw,40px);alig
 h1{font:400 clamp(2.8rem,10vw,6rem)/.9 var(--display);margin:0;letter-spacing:.01em;text-wrap:balance}
 h1 span{color:var(--red)}
 .lede{max-width:52ch;margin:0;font-size:1.1rem;color:var(--muted)}
-@media (max-width:560px){header{grid-template-columns:1fr;justify-items:start}body{--art:url("assets/shed-art-v2-mobile.webp");--art-w:max(100%,560px)}}
+@media (max-width:560px){header{grid-template-columns:1fr;justify-items:start}.maker{letter-spacing:.06em;font-size:.68rem;text-shadow:0 1px 8px #000}.badge{width:140px}body{--art:url("assets/shed-art-v3-mobile.webp");--art-w:max(100%,560px)}}
 header{padding-block:clamp(8px,6vw,72px) 0}
 h1,.lede{text-shadow:0 2px 18px rgba(0,0,0,.85)}
 .lede{color:var(--steel)}
