@@ -92,6 +92,14 @@ h1,.lede{text-shadow:0 2px 18px rgba(0,0,0,.85)}
 }
 
 footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font:500 .75rem/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-top:1.5px solid var(--line);padding-top:16px}
+
+.support{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px 24px;background:var(--plate);border:1.5px dashed var(--line);border-radius:6px;padding:20px 22px}
+.support p{margin:0;color:var(--muted);max-width:52ch;min-width:0}
+.support strong{display:block;font:400 1.25rem/1.2 var(--display);color:var(--steel);margin-bottom:4px;letter-spacing:.01em}
+.coffee{display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border-radius:999px;background:var(--red);color:#fff;font:700 .95rem/1 var(--body);text-decoration:none;white-space:nowrap;transition:transform .15s ease}
+.coffee:hover,.coffee:focus-visible{transform:translateY(-2px)}
+.coffee:focus-visible{outline:3px solid var(--steel);outline-offset:3px}
+@media (prefers-reduced-motion:reduce){.coffee{transition:none}.coffee:hover{transform:none}}
 </style>
 </head>
 <body>
@@ -143,6 +151,11 @@ footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font:50
       <div class="specs"><span>7 digits</span><span>5 attempts</span><span class="play">Play →</span></div>
     </a>
   </main>
+
+  <section class="support" aria-label="Support Game Shed">
+    <p><strong>Enjoying the games?</strong>Everything here is free and built in the shed after hours. If one made your day, you can buy me a coffee.</p>
+    <a class="coffee" href="https://buymeacoffee.com/mancaveman6" target="_blank" rel="noopener">&#9749; Buy me a coffee</a>
+  </section>
 
   <footer>
     <span>© Mancave Industries</span>
