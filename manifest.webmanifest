@@ -1,0 +1,17 @@
+{
+  "name": "Game Shed",
+  "short_name": "Game Shed",
+  "description": "Puzzles, word games and party deduction from Mancave Industries.",
+  "id": "/Gameshed/",
+  "start_url": "/Gameshed/",
+  "scope": "/Gameshed/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#121112",
+  "theme_color": "#121112",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

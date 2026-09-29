@@ -2,9 +2,14 @@
 <html lang="en-GB">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Game Shed: free browser games from Mancave Industries.">
 <meta name="theme-color" content="#121112">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Game Shed">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta property="og:title" content="Game Shed | Mancave Industries">
 <meta property="og:description" content="Puzzles, word games and party deduction, built in the shed.">
 <meta property="og:image" content="https://mancave-industries.github.io/Gameshed/assets/og-image.jpg">
@@ -39,7 +44,7 @@ body{
   background-size:var(--art-w) auto,28px 28px;
   background-position:top center,14px 14px;
   background-repeat:no-repeat,repeat;
-  padding-inline:clamp(16px,4vw,48px);padding-block:clamp(24px,5vw,56px);
+  padding-inline:max(clamp(16px,4vw,48px),env(safe-area-inset-left));padding-block:calc(clamp(24px,5vw,56px) + env(safe-area-inset-top)) calc(clamp(24px,5vw,56px) + env(safe-area-inset-bottom));
 }
 .wrap{max-width:1080px;margin:0 auto;display:grid;gap:clamp(28px,5vw,48px)}
 
@@ -144,5 +149,8 @@ footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font:50
     <span>Man caves just got lit</span>
   </footer>
 </div>
+<script>
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
 </body>
 </html>
