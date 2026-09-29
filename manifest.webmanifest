@@ -4,7 +4,7 @@
   "description": "Puzzles, word games and party deduction from Mancave Industries.",
   "id": "/Gameshed/",
   "start_url": "/Gameshed/",
-  "scope": "/Gameshed/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#121112",
