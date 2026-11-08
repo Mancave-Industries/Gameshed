@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0e1421">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Alfred Control Centre</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div>
+        <div class="eyebrow"><span class="signal" aria-hidden="true"></span> Mancave Industries</div>
+        <h1>Alfred</h1>
+        <p class="subtitle">Control Centre</p>
+      </div>
+      <div class="account">
+        <span class="badge">Preview</span>
+        <form action="/auth/logout" method="post" id="logout" hidden>
+          <button class="subtle" type="submit">Sign out</button>
+        </form>
+      </div>
+    </header>
+
+    <section id="session-panel" class="session-panel" aria-label="GitHub connection">
+      <p id="session-message" role="status">Checking GitHub connection…</p>
+      <form action="/auth/login" method="post" id="login" hidden>
+        <button class="button primary" type="submit">Sign in with GitHub</button>
+      </form>
+      <button id="retry" class="subtle" type="button" hidden>Retry connection</button>
+      <noscript><p>Enable JavaScript to load the dashboard and record decisions.</p></noscript>
+    </section>
+
+    <section id="portfolio" aria-labelledby="portfolio-heading" hidden>
+      <div class="portfolio-header">
+        <div>
+          <h2 id="portfolio-heading">Projects</h2>
+          <p id="freshness" role="status"></p>
+        </div>
+        <button id="refresh" class="subtle" type="button">Refresh</button>
+      </div>
+      <div class="grid" id="projects"></div>
+      <footer>Decisions are saved to GitHub. Claude handoff awaits separate approval.</footer>
+    </section>
+
+    <template id="card">
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <div class="eyebrow priority"></div>
+            <h3></h3>
+          </div>
+          <a class="repo-link">Repo <span aria-hidden="true">↗</span></a>
+        </div>
+        <p class="project-status"></p>
+        <dl class="details">
+          <div><dt>Blocker</dt><dd class="blocker"></dd></div>
+          <div><dt>Next</dt><dd class="next"></dd></div>
+        </dl>
+        <div class="work">
+          <h4>Open work</h4>
+          <p class="activity"></p>
+          <ul class="tasks"></ul>
+          <ul class="references" aria-label="Brief sources"></ul>
+        </div>
+        <section class="decision" aria-label="Project decision">
+          <h4>Decision</h4>
+          <p class="question"></p>
+          <div class="choices">
+            <button type="button" class="button primary" value="YES">YES</button>
+            <button type="button" class="button" value="NO">NO</button>
+            <button type="button" class="button" value="DEFER">DEFER</button>
+          </div>
+          <p class="decision-status" role="status"></p>
+          <a class="decision-link" hidden>GitHub decision record <span aria-hidden="true">↗</span></a>
+        </section>
+      </article>
+    </template>
+  </main>
+</body>
+</html>
