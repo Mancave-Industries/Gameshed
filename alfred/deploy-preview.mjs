@@ -113,7 +113,11 @@ async function deploy() {
       if (handoff.status !== 401 || !(await handoff.text()).includes('<title>Claude handoff</title>')) {
         throw new Error('The hosted Claude handoff must require sign-in.');
       }
-      console.log('Verified preview, GitHub setup and the protected Claude handoff: ' + origin);
+      const chat = await fetch(origin + '/mcp', { redirect: 'error', signal: AbortSignal.timeout(5000) });
+      if (chat.status !== 401 || !chat.headers.get('www-authenticate')?.includes('/.well-known/oauth-protected-resource/mcp')) {
+        throw new Error('The hosted Alfred chat endpoint must require OAuth.');
+      }
+      console.log('Verified preview, GitHub setup, Claude handoff and protected Alfred chat: ' + origin);
       if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, 'Alfred preview: ' + origin + '\n');
       return;
     }

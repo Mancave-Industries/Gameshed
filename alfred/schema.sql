@@ -32,3 +32,12 @@ CREATE TABLE IF NOT EXISTS claude_pilot (
     started_at INTEGER,
     result TEXT
 );
+
+CREATE TABLE IF NOT EXISTS chat_grants (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    phase TEXT NOT NULL,
+    challenge TEXT NOT NULL,
+    state TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+);
