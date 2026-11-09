@@ -48,6 +48,18 @@ async function accountId() {
 
 async function deploy() {
   if (!token || !wrangler) throw new Error('The preview deployment requires a Cloudflare token and Wrangler.');
+  const { ANTHROPIC_API_KEY: anthropicKey, ...wranglerEnv } = process.env;
+  if (anthropicKey) {
+    const model = 'claude-haiku-4-5-20251001';
+    const response = await fetch('https://api.anthropic.com/v1/models/' + model, {
+      redirect: 'error',
+      signal: AbortSignal.timeout(12000),
+      headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+    });
+    if (!response.ok) throw new Error('Anthropic credential/model check returned HTTP ' + response.status + '.');
+    if ((await response.json()).id !== model) throw new Error('Anthropic returned unexpected pilot model metadata.');
+    console.log('Verified Anthropic credential and pilot model (metadata only).');
+  }
   const id = await accountId();
   const root = '/accounts/' + id;
   const projects = root + '/pages/projects';
@@ -88,8 +100,8 @@ async function deploy() {
       envVars.ALFRED_SESSION_KEY = { type: 'secret_text', value: randomBytes(32).toString('base64url') };
     }
   }
-  if (process.env.ANTHROPIC_API_KEY) {
-    envVars.ANTHROPIC_API_KEY = { type: 'secret_text', value: process.env.ANTHROPIC_API_KEY };
+  if (anthropicKey) {
+    envVars.ANTHROPIC_API_KEY = { type: 'secret_text', value: anthropicKey };
   }
   await api(target, 'PATCH', { deployment_configs: { preview: {
     compatibility_date: '2026-10-01',
@@ -99,7 +111,7 @@ async function deploy() {
 
   execFileSync(wrangler, [
     'pages', 'deploy', 'alfred/public', '--project-name', projectName, '--branch', previewBranch,
-  ], { stdio: 'inherit', env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: id } });
+  ], { stdio: 'inherit', env: { ...wranglerEnv, CLOUDFLARE_ACCOUNT_ID: id } });
 
   let lastCheck = 'network unavailable';
   for (let attempt = 0; attempt < 12; attempt++) {
