@@ -56,9 +56,9 @@ function renderCard(project) {
   const repo = query('.repo-link');
   repo.href = project.repositoryUrl;
   repo.setAttribute('aria-label', project.name + ' repository');
-  query('.project-status').textContent = project.status;
-  query('.blocker').textContent = project.blocker;
-  query('.next').textContent = project.next;
+  const projectStatus = query('.project-status');
+  const blocker = query('.blocker');
+  const next = query('.next');
   const question = query('.question');
   question.textContent = project.question;
 
@@ -89,6 +89,12 @@ function renderCard(project) {
   function displayDecision() {
     decisionStatus.classList.remove('error');
     const recorded = Boolean(decision?.choice);
+    const followUp = project.afterDecision?.[decision?.choice];
+    projectStatus.textContent = followUp?.status ?? project.status;
+    blocker.textContent = followUp?.blocker ?? project.blocker;
+    next.textContent = decision?.choice === 'DEFER'
+      ? 'Revisit the deferred decision before changing the plan.'
+      : followUp?.next ?? project.next;
     decisionHeading.textContent = recorded ? 'Recorded decision' : 'Decision';
     question.hidden = recorded && !editing;
     choices.hidden = recorded && !editing;

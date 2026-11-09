@@ -16,6 +16,13 @@ const PROJECTS = [
     blocker: 'The full narration test was blocked at Chromium installation in the release PR. Four portraits are provisional.',
     next: 'Run the release audit for gameplay, narration and portraits.',
     question: 'Approve a read-only release audit?',
+    afterDecision: {
+      YES: {
+        status: 'Release evidence reviewed. All six narrator packs passed asset integrity.',
+        next: 'Restore Chromium in CI and rerun the gameplay and narration suite. Review the four provisional portraits.',
+      },
+      NO: { next: 'Leave the release audit off the workstack.' },
+    },
     references: [{ path: 'pull/14', title: 'Narrator release and test evidence' }],
   },
   {
@@ -24,6 +31,14 @@ const PROJECTS = [
     blocker: 'The first usable release and its curriculum coverage are still to be agreed.',
     next: 'Compare the draft builds and choose the first release scope.',
     question: 'Prioritise a usable first release over full curriculum coverage?',
+    afterDecision: {
+      YES: {
+        status: 'Draft builds reviewed. The Biology build in PR #18 includes the foundations from PR #15.',
+        blocker: 'The draft teaching packs need review and the private iPhone pilot still needs validation.',
+        next: 'Review one existing Biology topic, then validate it on iPhone as the first pilot.',
+      },
+      NO: { next: 'Agree the coverage and validation criteria for the full first release.' },
+    },
     references: [
       { path: 'pull/18', title: 'Biology coverage' },
       { path: 'pull/16', title: 'AQA sources' },
@@ -36,6 +51,10 @@ const PROJECTS = [
     blocker: 'Stock, signage, payments and stall equipment readiness need confirming.',
     next: 'Check essentials against the 28 November stall deadline.',
     question: 'Freeze optional stall features until after the festival?',
+    afterDecision: {
+      YES: { next: 'Focus on stock, signage and payments. Revisit optional features after the festival.' },
+      NO: { next: 'Check stock, signage and payments first. Keep optional features eligible where they fit the deadline.' },
+    },
     references: [{ repo: 'Gameshed', path: 'issues/1', title: 'Festival preparation brief' }],
   },
   {
@@ -44,6 +63,10 @@ const PROJECTS = [
     blocker: 'Songs and annotations are device-local. Cloud storage is pending.',
     next: 'Retain the master song library, set builder and transpose work in the backlog.',
     question: 'Hold new feature development while the priority releases are reviewed?',
+    afterDecision: {
+      YES: { next: 'Keep new feature work in the backlog during the priority release reviews.' },
+      NO: { next: 'Reproduce the transpose problem on one saved song. Check how the set uses the master copy.' },
+    },
     references: [{ path: 'blob/main/README.md', title: 'Source and storage notes' }],
   },
 ];
