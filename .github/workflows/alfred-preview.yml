@@ -30,5 +30,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 34c51add54418c2a9d8c38b9be2420e8
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           WRANGLER_SEND_METRICS: 'false'
         run: node alfred/deploy-preview.mjs "$RUNNER_TEMP/alfred-cli/node_modules/.bin/wrangler"

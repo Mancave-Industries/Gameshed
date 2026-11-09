@@ -22,3 +22,13 @@ CREATE TABLE IF NOT EXISTS claude_rehearsals (
     expires_at INTEGER NOT NULL,
     used_at INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS claude_pilot (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    proposal TEXT NOT NULL,
+    revision TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    started_at INTEGER,
+    result TEXT
+);

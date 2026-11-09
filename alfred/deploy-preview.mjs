@@ -88,6 +88,9 @@ async function deploy() {
       envVars.ALFRED_SESSION_KEY = { type: 'secret_text', value: randomBytes(32).toString('base64url') };
     }
   }
+  if (process.env.ANTHROPIC_API_KEY) {
+    envVars.ANTHROPIC_API_KEY = { type: 'secret_text', value: process.env.ANTHROPIC_API_KEY };
+  }
   await api(target, 'PATCH', { deployment_configs: { preview: {
     compatibility_date: '2026-10-01',
     d1_databases: { ALFRED_DB: { id: database.uuid } },
