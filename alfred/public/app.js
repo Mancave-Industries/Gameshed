@@ -283,6 +283,34 @@ async function loadDashboard() {
   }
 }
 
+const askForm = document.querySelector('#ask-form');
+const askQuestion = document.querySelector('#ask-question');
+const askSubmit = document.querySelector('#ask-submit');
+const askResponse = document.querySelector('#ask-response');
+
+askForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const question = askQuestion.value.trim();
+  if (!question || askSubmit.disabled) return;
+  askSubmit.disabled = true;
+  askQuestion.readOnly = true;
+  askResponse.textContent = 'Checking the dashboard and asking Claude…';
+  try {
+    const result = await api('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question }),
+    });
+    askResponse.textContent = result.answer;
+  } catch (error) {
+    askResponse.textContent = error.message;
+    if (error.status === 401) showConnection(error.message, { login: true });
+  } finally {
+    askSubmit.disabled = false;
+    askQuestion.readOnly = false;
+  }
+});
+
 refresh.addEventListener('click', loadDashboard);
 retry.addEventListener('click', loadDashboard);
 loadDashboard();

@@ -52,6 +52,16 @@
         </form>
         <div id="pending-decisions"></div>
       </section>
+      <section class="card workstack ask-alfred" aria-labelledby="ask-heading">
+        <h3 id="ask-heading">Ask Alfred</h3>
+        <p id="ask-help">Get a read-only answer from Claude using the latest dashboard. Each question uses the separate £1 trial budget, with a conservative US$0.75 API ceiling.</p>
+        <form id="ask-form">
+          <label for="ask-question">Your question</label>
+          <textarea id="ask-question" rows="2" required maxlength="800" aria-describedby="ask-help" placeholder="What needs my attention today?"></textarea>
+          <button class="button primary" id="ask-submit" type="submit">Ask Alfred</button>
+        </form>
+        <p id="ask-response" role="status"></p>
+      </section>
       <section class="card claude-activity" aria-labelledby="claude-heading">
         <h3 id="claude-heading">Claude activity</h3>
         <p id="claude-pilot-status" role="status"></p>

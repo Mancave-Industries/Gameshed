@@ -41,3 +41,10 @@ CREATE TABLE IF NOT EXISTS chat_grants (
     state TEXT NOT NULL,
     expires_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS ask_alfred_budget (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    committed_microusd INTEGER NOT NULL CHECK (committed_microusd >= 0)
+);
+
+INSERT OR IGNORE INTO ask_alfred_budget (id, committed_microusd) VALUES (1, 0);
