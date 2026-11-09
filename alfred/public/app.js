@@ -58,7 +58,8 @@ function renderCard(project) {
   query('.project-status').textContent = project.status;
   query('.blocker').textContent = project.blocker;
   query('.next').textContent = project.next;
-  query('.question').textContent = project.question;
+  const question = query('.question');
+  question.textContent = project.question;
 
   const activity = query('.activity');
   if (project.activity === 'unavailable') {
@@ -75,20 +76,29 @@ function renderCard(project) {
   }
   for (const ref of project.references) appendLink(query('.references'), ref.title, ref.url);
 
-  const buttons = [...card.querySelectorAll('.choices button')];
+  const choices = query('.choices');
+  const buttons = [...choices.querySelectorAll('button')];
+  const decisionHeading = query('.decision h4');
+  const changeDecision = query('.change-decision');
   const decisionStatus = query('.decision-status');
   const decisionLink = query('.decision-link');
   let decision = project.decision;
+  let editing = false;
 
   function displayDecision() {
     decisionStatus.classList.remove('error');
-    if (!decision?.ready) {
-      decisionStatus.textContent = 'Decision issue unavailable.';
-    } else if (decision.choice) {
+    const recorded = Boolean(decision?.choice);
+    decisionHeading.textContent = recorded ? 'Recorded decision' : 'Decision';
+    question.hidden = recorded && !editing;
+    choices.hidden = recorded && !editing;
+    changeDecision.hidden = !recorded || !decision.ready;
+    changeDecision.textContent = editing ? 'Cancel change' : 'Change decision';
+    changeDecision.setAttribute('aria-expanded', String(editing));
+    if (recorded) {
       const date = decision.recordedAt ? ' · ' + dateFormat.format(new Date(decision.recordedAt)) : '';
       decisionStatus.textContent = 'Recorded in GitHub · ' + decision.choice + date;
     } else {
-      decisionStatus.textContent = 'Awaiting your decision.';
+      decisionStatus.textContent = decision?.ready ? 'Awaiting your decision.' : 'Decision issue unavailable.';
     }
     decisionLink.hidden = !decision?.url;
     if (decision?.url) decisionLink.href = decision.url;
@@ -98,12 +108,18 @@ function renderCard(project) {
     }
   }
 
+  changeDecision.addEventListener('click', () => {
+    editing = !editing;
+    displayDecision();
+  });
+
   for (const button of buttons) {
     button.setAttribute('aria-label', button.value + ' for ' + project.name);
     button.addEventListener('click', async () => {
       saving += 1;
       refresh.disabled = true;
       for (const option of buttons) option.disabled = true;
+      changeDecision.disabled = true;
       decisionStatus.classList.remove('error');
       decisionStatus.textContent = 'Saving to GitHub…';
       try {
@@ -114,13 +130,17 @@ function renderCard(project) {
         });
         if (saved.decision?.choice !== button.value) throw new Error('GitHub did not confirm the decision. Refresh to check.');
         decision = saved.decision;
+        editing = false;
         displayDecision();
+        changeDecision.disabled = false;
+        changeDecision.focus();
       } catch (error) {
         displayDecision();
         decisionStatus.classList.add('error');
         decisionStatus.textContent = error.message;
         if (error.status === 401) showConnection(error.message, { login: true });
       } finally {
+        changeDecision.disabled = false;
         saving -= 1;
         refresh.disabled = saving > 0;
       }
