@@ -42,6 +42,11 @@
         </div>
         <button id="refresh" class="subtle" type="button">Refresh</button>
       </div>
+      <section class="card workstack" aria-labelledby="next-heading">
+        <h3 id="next-heading">Next up</h3>
+        <ul id="next-actions" class="next-actions"></ul>
+        <p id="next-empty" hidden>No actions queued.</p>
+      </section>
       <section class="card claude-activity" aria-labelledby="claude-heading">
         <h3 id="claude-heading">Claude activity</h3>
         <p>Live Claude runs are disabled. Project decisions and £0 rehearsals do not start Claude.</p>
@@ -86,6 +91,9 @@
             <button type="button" class="subtle change-decision" hidden>Change decision</button>
           </div>
         </section>
+        <details class="decision-history" hidden>
+          <summary>Decision history</summary>
+        </details>
       </article>
     </template>
   </main>

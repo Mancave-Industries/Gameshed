@@ -35,7 +35,13 @@ button { font: inherit; }
 .portfolio-header .subtle { flex: none; }
 #freshness { margin-top: .3rem; }
 .grid { display: grid; gap: .85rem; }
-.claude-activity { margin-bottom: .85rem; }
+.workstack, .claude-activity { margin-bottom: .85rem; }
+.next-actions { list-style: none; margin: .3rem 0 0; padding: 0; }
+.next-actions li { padding: .55rem 0; }
+.next-actions li + li { border-top: 1px solid var(--line); }
+.next-actions a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 650; }
+.next-actions p, #next-empty { color: var(--muted); font-size: .875rem; line-height: 1.45; }
+.decision-history summary { min-height: 44px; padding: .75rem 0; color: var(--muted); cursor: pointer; }
 .claude-activity p { margin-top: .4rem; color: var(--muted); font-size: .875rem; line-height: 1.45; }
 .claude-activity a { display: inline-flex; align-items: center; min-height: 44px; font-size: .875rem; }
 .card { min-width: 0; padding: 1rem; border: 1px solid var(--line); border-radius: .9rem; background: var(--panel); }
