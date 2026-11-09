@@ -13,21 +13,25 @@ const PROJECTS = [
   {
     id: 'deceivers-audit', name: 'The Deceivers', repo: 'Deceivers', priority: '01 / Release',
     status: 'Six-narrator cast merged on 5 November.',
-    blocker: 'The full narration test was blocked at Chromium installation in the release PR. Four portraits are provisional.',
+    blocker: 'The game and narration tests stopped before they ran. The installed Playwright version cannot set up Chromium on the new Ubuntu 26.04 runner.',
     next: 'Run the release audit for gameplay, narration and portraits.',
     question: 'Approve a read-only release audit?',
     afterDecision: {
       YES: {
         status: 'Release evidence reviewed. All six narrator packs passed asset integrity.',
-        next: 'Restore Chromium in CI and rerun the gameplay and narration suite. Review the four provisional portraits.',
+        next: 'Test the gameplay and narration suites on Ubuntu 24.04 in a review branch.',
         review: {
-          summary: 'The approved audit is complete. All six voice packs passed file checks. The full gameplay and narration test never started because the test browser failed to install. Four portraits are still temporary.',
-          next: 'Alfred’s next step is to get the game test running and bring you a side-by-side preview of the four portraits. You can choose once you can see them.',
+          summary: 'All six voice packs passed file checks. The four original replacement portraits deployed on 6 November, after the release record used by the audit. The latest full test stopped at browser installation.',
+          next: 'Alfred’s next step is to try the test on Ubuntu 24.04 in a review branch and report which checks actually run. There’s no decision for you at this stage.',
         },
       },
       NO: { next: 'Leave the release audit off the workstack.' },
     },
-    references: [{ path: 'pull/14', title: 'Narrator release and test evidence' }],
+    references: [
+      { path: 'pull/14', title: 'Narrator release evidence' },
+      { path: 'actions/runs/42135883690', title: 'Replacement portrait deployment' },
+      { path: 'actions/runs/42135884222', title: 'Latest test run' },
+    ],
   },
   {
     id: 'science-mvp', name: 'Science Buddy', repo: 'Science_Budy', priority: '02 / Build',
