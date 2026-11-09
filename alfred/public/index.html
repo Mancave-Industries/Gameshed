@@ -37,22 +37,36 @@
     <section id="portfolio" aria-labelledby="portfolio-heading" hidden>
       <div class="portfolio-header">
         <div>
-          <h2 id="portfolio-heading">Projects</h2>
+          <h2 id="portfolio-heading">Your actions</h2>
           <p id="freshness" role="status"></p>
         </div>
         <button id="refresh" class="subtle" type="button">Refresh</button>
       </div>
-      <section class="card workstack" aria-labelledby="next-heading">
-        <h3 id="next-heading">Next up</h3>
-        <ul id="next-actions" class="next-actions"></ul>
-        <p id="next-empty" hidden>No actions queued.</p>
+      <section class="card workstack" aria-labelledby="approval-heading">
+        <h3 id="approval-heading" tabindex="-1">Awaiting your approval</h3>
+        <p id="approval-status" role="status"></p>
+        <form id="pilot-review" class="decision pending" action="/handoff/pilot/review" method="post" hidden>
+          <h4>The Deceivers · Claude release audit</h4>
+          <p class="question">Review the scope before approving one read-only run, capped at £1.</p>
+          <button class="button action-required" type="submit">Review Claude run</button>
+        </form>
+        <div id="pending-decisions"></div>
       </section>
       <section class="card claude-activity" aria-labelledby="claude-heading">
         <h3 id="claude-heading">Claude activity</h3>
         <p id="claude-pilot-status" role="status"></p>
         <p id="claude-rehearsal" role="status"></p>
-        <a id="claude-handoff" href="/handoff">Open Claude handoff</a>
+        <details id="claude-findings" hidden>
+          <summary class="button">View Claude’s findings</summary>
+          <p id="claude-result"></p>
+        </details>
+        <a id="claude-handoff" class="button" href="/handoff">Open Claude handoff</a>
       </section>
+      <section id="project-reviews" class="card workstack" aria-labelledby="review-heading" hidden>
+        <h3 id="review-heading">Project reviews</h3>
+        <ul id="review-actions" class="next-actions"></ul>
+      </section>
+      <h2 class="project-heading">Project status</h2>
       <div class="grid" id="projects"></div>
       <footer>Decisions are saved to GitHub.</footer>
     </section>
@@ -78,6 +92,7 @@
           <ul class="references" aria-label="Brief sources"></ul>
         </div>
         <section class="decision" aria-label="Project decision">
+          <h3 class="decision-project" hidden></h3>
           <h4>Decision</h4>
           <p class="question"></p>
           <div class="choices">

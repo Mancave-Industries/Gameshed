@@ -20,6 +20,10 @@ const PROJECTS = [
       YES: {
         status: 'Release evidence reviewed. All six narrator packs passed asset integrity.',
         next: 'Restore Chromium in CI and rerun the gameplay and narration suite. Review the four provisional portraits.',
+        review: {
+          label: 'Open narrator release notes', path: 'pull/14',
+          instruction: 'Decide whether to keep or replace the provisional portraits for Timothy, Cate, Kay and Penelope.',
+        },
       },
       NO: { next: 'Leave the release audit off the workstack.' },
     },
@@ -36,6 +40,10 @@ const PROJECTS = [
         status: 'Draft builds reviewed. The Biology build in PR #18 includes the foundations from PR #15.',
         blocker: 'The draft teaching packs need review and the private iPhone pilot still needs validation.',
         next: 'Review one existing Biology topic, then validate it on iPhone as the first pilot.',
+        review: {
+          label: 'Open Biology draft', path: 'pull/18',
+          instruction: 'Pick one Biology topic from the draft to try in the iPhone pilot.',
+        },
       },
       NO: { next: 'Agree the coverage and validation criteria for the full first release.' },
     },
@@ -420,7 +428,7 @@ async function dashboard(token, env) {
     env.ALFRED_DB.prepare(
       'SELECT issue_number AS issueNumber, used_at AS completedAt FROM claude_rehearsals WHERE used_at IS NOT NULL ORDER BY used_at DESC LIMIT 1',
     ).first().catch(() => undefined),
-    env.ALFRED_DB.prepare('SELECT status, started_at AS startedAt FROM claude_pilot WHERE id = 1 AND started_at IS NOT NULL')
+    env.ALFRED_DB.prepare('SELECT status, started_at AS startedAt, result FROM claude_pilot WHERE id = 1 AND started_at IS NOT NULL')
       .first().catch(() => undefined),
   ]);
   return json({

@@ -39,14 +39,18 @@ button { font: inherit; }
 .grid { display: grid; gap: .85rem; }
 .workstack, .claude-activity { margin-bottom: .85rem; }
 .next-actions { list-style: none; margin: .3rem 0 0; padding: 0; }
-.next-actions li { padding: .55rem 0; }
+.next-actions li { display: grid; justify-items: start; gap: .4rem; padding: .65rem 0; }
 .next-actions li + li { border-top: 1px solid var(--line); }
 .next-actions a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 650; }
-.next-actions p, #next-empty { font-size: .875rem; line-height: 1.45; }
-#next-empty { color: var(--muted); }
+.next-actions p, #approval-status { color: var(--muted); font-size: .875rem; line-height: 1.45; }
+#approval-status { margin-top: .4rem; }
+.project-heading { margin: 1rem 0 .7rem; }
+.decision.pending { border-left: 3px solid var(--action); }
+.pending .decision-project { font-size: 1rem; }
 .decision-history summary { min-height: 44px; padding: .75rem 0; color: var(--muted); cursor: pointer; }
 .claude-activity p { margin-top: .4rem; color: var(--muted); font-size: .875rem; line-height: 1.45; }
-.claude-activity a { display: inline-flex; align-items: center; min-height: 44px; font-size: .875rem; }
+.claude-activity a, .claude-activity summary { display: inline-flex; align-items: center; align-self: flex-start; margin-top: .55rem; font-size: .875rem; }
+#claude-result { white-space: pre-wrap; overflow-wrap: anywhere; }
 .card { min-width: 0; padding: 1rem; border: 1px solid var(--line); border-radius: .9rem; background: var(--panel); }
 .card-header { align-items: center; }
 .priority { margin-bottom: .24rem; color: #bfcaff; }
@@ -69,8 +73,7 @@ button { font: inherit; }
 .choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem; }
 .button, .subtle { min-height: 44px; min-width: 44px; padding: .55rem .65rem; border: 1px solid var(--line); border-radius: .5rem; background: #2a3850; color: #eff3fa; font-size: .8rem; font-weight: 700; cursor: pointer; }
 .primary { background: #c0ccff; border-color: #c0ccff; color: #121b32; }
-.action-required, .next-actions p, .details .next, .decision .question,
-.claude-activity .action-required { color: var(--action); }
+.action-required, .decision .question { color: var(--action); }
 a.button { text-decoration: none; }
 .button.action-required { background: #421f2b; border-color: var(--action); }
 .button.approve { background: var(--approval); border-color: var(--approval); color: #102619; }

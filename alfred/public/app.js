@@ -10,8 +10,14 @@ const freshness = document.querySelector('#freshness');
 const claudeRehearsal = document.querySelector('#claude-rehearsal');
 const claudePilotStatus = document.querySelector('#claude-pilot-status');
 const claudeHandoff = document.querySelector('#claude-handoff');
-const nextActions = document.querySelector('#next-actions');
-const nextEmpty = document.querySelector('#next-empty');
+const claudeFindings = document.querySelector('#claude-findings');
+const claudeResult = document.querySelector('#claude-result');
+const claudeFindingsLabel = claudeFindings.querySelector('summary');
+const pilotReview = document.querySelector('#pilot-review');
+const pendingDecisions = document.querySelector('#pending-decisions');
+const approvalStatus = document.querySelector('#approval-status');
+const projectReviews = document.querySelector('#project-reviews');
+const reviewActions = document.querySelector('#review-actions');
 const cardTemplate = document.querySelector('#card');
 const signInResult = new URLSearchParams(location.search).get('sign-in');
 const dateFormat = new Intl.DateTimeFormat('en-GB', {
@@ -58,25 +64,37 @@ function nextStep(project, choice) {
     : project.afterDecision?.[choice]?.next ?? project.next;
 }
 
-function renderWorkstack(projectList) {
+function renderActions(projectList, pilot) {
+  const awaiting = projectList.filter(({ decision }) => decision?.ready && !decision.choice);
+  const unavailable = projectList.some(({ decision }) => !decision?.ready) || (pilot?.ready && pilot.run === undefined);
+  const pilotPending = Boolean(pilot?.ready && pilot.run === null);
+  pilotReview.hidden = !pilotPending;
+  approvalStatus.textContent = unavailable
+    ? 'Some approval records could not be checked. Tap Refresh to try again.'
+    : awaiting.length || pilotPending ? '' : 'You’re all caught up. No approvals waiting.';
+  approvalStatus.hidden = !approvalStatus.textContent;
+
   const entries = [];
   for (const project of projectList) {
-    const decision = project.decision;
-    if (!decision || decision.choice === 'DEFER' || (!decision.choice && !decision.ready)) continue;
+    const review = project.afterDecision?.[project.decision?.choice]?.review;
+    if (!review) continue;
     const item = document.createElement('li');
+    const heading = document.createElement('h4');
+    heading.textContent = project.name;
+    const instruction = document.createElement('p');
+    instruction.textContent = review.instruction;
     const link = document.createElement('a');
-    link.href = '#project-' + project.id;
-    link.textContent = project.name;
-    const action = document.createElement('p');
-    action.textContent = decision.choice ? nextStep(project, decision.choice) : project.question;
-    item.append(link, action);
+    link.className = 'button action-required';
+    link.href = project.repositoryUrl + '/' + review.path;
+    link.textContent = review.label;
+    item.append(heading, instruction, link);
     entries.push(item);
   }
-  nextActions.replaceChildren(...entries);
-  nextEmpty.hidden = entries.length > 0;
+  reviewActions.replaceChildren(...entries);
+  projectReviews.hidden = !entries.length;
 }
 
-function renderCard(project, projectList) {
+function renderCard(project, projectList, pilot) {
   const card = cardTemplate.content.firstElementChild.cloneNode(true);
   const query = selector => card.querySelector(selector);
   card.id = 'project-' + project.id;
@@ -109,7 +127,10 @@ function renderCard(project, projectList) {
   const choices = query('.choices');
   const buttons = [...choices.querySelectorAll('button')];
   const decisionPanel = query('.decision');
+  decisionPanel.setAttribute('aria-label', project.name + ' decision');
   const decisionHeading = query('.decision h4');
+  const decisionProject = query('.decision-project');
+  decisionProject.textContent = project.name;
   const history = query('.decision-history');
   const changeDecision = query('.change-decision');
   const decisionStatus = query('.decision-status');
@@ -124,6 +145,11 @@ function renderCard(project, projectList) {
     projectStatus.textContent = followUp?.status ?? project.status;
     blocker.textContent = followUp?.blocker ?? project.blocker;
     next.textContent = nextStep(project, decision?.choice);
+    const pending = Boolean(decision?.ready && !recorded);
+    decisionPanel.classList.toggle('pending', pending);
+    decisionProject.hidden = !pending;
+    decisionHeading.hidden = pending;
+    if (pending) pendingDecisions.append(decisionPanel);
     if (recorded && decisionPanel.parentElement !== history) history.append(decisionPanel);
     history.hidden = !recorded;
     decisionHeading.textContent = recorded ? 'Recorded decision' : 'Decision';
@@ -154,6 +180,7 @@ function renderCard(project, projectList) {
   for (const button of buttons) {
     button.setAttribute('aria-label', button.value + ' for ' + project.name);
     button.addEventListener('click', async () => {
+      const wasPending = !decision?.choice;
       saving += 1;
       refresh.disabled = true;
       for (const option of buttons) option.disabled = true;
@@ -172,8 +199,9 @@ function renderCard(project, projectList) {
         editing = false;
         displayDecision();
         history.open = false;
-        history.querySelector('summary').focus();
-        renderWorkstack(projectList);
+        renderActions(projectList, pilot);
+        if (wasPending) document.querySelector('#approval-heading').focus();
+        else history.querySelector('summary').focus();
       } catch (error) {
         displayDecision();
         decisionStatus.classList.add('error');
@@ -195,20 +223,24 @@ async function loadDashboard() {
   refresh.disabled = true;
   retry.disabled = true;
   projects.inert = true;
+  pendingDecisions.inert = true;
+  pilotReview.inert = true;
   freshness.textContent = 'Checking GitHub…';
   try {
     const data = await api('/api/dashboard');
-    const cards = data.projects.map(project => renderCard(project, data.projects));
-    projects.replaceChildren(...cards);
-    renderWorkstack(data.projects);
     const pilot = data.claudePilot;
-    const needsApproval = Boolean(pilot?.ready && !pilot.run);
-    claudePilotStatus.classList.toggle('action-required', needsApproval);
-    claudeHandoff.classList.toggle('button', needsApproval);
-    claudeHandoff.classList.toggle('action-required', needsApproval);
+    pendingDecisions.replaceChildren();
+    const cards = data.projects.map(project => renderCard(project, data.projects, pilot));
+    projects.replaceChildren(...cards);
+    renderActions(data.projects, pilot);
     claudePilotStatus.textContent = pilot?.run
-      ? 'Live Deceivers pilot · ' + pilot.run.status
-      : pilot?.ready ? 'Live Deceivers pilot ready for your approval.' : 'Live Deceivers pilot is waiting for the Anthropic API credential.';
+      ? 'Deceivers release audit · ' + pilot.run.status
+      : pilot?.run === undefined ? 'Claude status unavailable. Tap Refresh to try again.'
+      : pilot.ready ? 'Live Deceivers pilot ready for your approval.' : 'Live Deceivers pilot is waiting for the Anthropic API credential.';
+    claudeResult.textContent = pilot?.run?.result ?? '';
+    claudeFindings.hidden = !claudeResult.textContent;
+    claudeFindingsLabel.textContent = pilot?.run?.status === 'completed' ? 'View Claude’s findings' : 'View run details';
+    claudeHandoff.hidden = !pilotReview.hidden;
     const rehearsal = data.latestRehearsal;
     claudeRehearsal.textContent = rehearsal
       ? 'Latest £0 rehearsal completed for Deceivers #' + rehearsal.issueNumber +
@@ -231,6 +263,8 @@ async function loadDashboard() {
     refresh.disabled = saving > 0;
     retry.disabled = false;
     projects.inert = false;
+    pendingDecisions.inert = false;
+    pilotReview.inert = false;
   }
 }
 
