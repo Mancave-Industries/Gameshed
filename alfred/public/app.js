@@ -9,6 +9,7 @@ const refresh = document.querySelector('#refresh');
 const freshness = document.querySelector('#freshness');
 const claudeRehearsal = document.querySelector('#claude-rehearsal');
 const claudePilotStatus = document.querySelector('#claude-pilot-status');
+const claudeHandoff = document.querySelector('#claude-handoff');
 const nextActions = document.querySelector('#next-actions');
 const nextEmpty = document.querySelector('#next-empty');
 const cardTemplate = document.querySelector('#card');
@@ -201,6 +202,10 @@ async function loadDashboard() {
     projects.replaceChildren(...cards);
     renderWorkstack(data.projects);
     const pilot = data.claudePilot;
+    const needsApproval = Boolean(pilot?.ready && !pilot.run);
+    claudePilotStatus.classList.toggle('action-required', needsApproval);
+    claudeHandoff.classList.toggle('button', needsApproval);
+    claudeHandoff.classList.toggle('action-required', needsApproval);
     claudePilotStatus.textContent = pilot?.run
       ? 'Live Deceivers pilot · ' + pilot.run.status
       : pilot?.ready ? 'Live Deceivers pilot ready for your approval.' : 'Live Deceivers pilot is waiting for the Anthropic API credential.';

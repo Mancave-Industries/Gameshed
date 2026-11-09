@@ -7,6 +7,8 @@
   --line: #303d52;
   --panel: #182234;
   --accent: #cbd4ff;
+  --action: #ff9c9c;
+  --approval: #79e8a3;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -40,7 +42,8 @@ button { font: inherit; }
 .next-actions li { padding: .55rem 0; }
 .next-actions li + li { border-top: 1px solid var(--line); }
 .next-actions a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 650; }
-.next-actions p, #next-empty { color: var(--muted); font-size: .875rem; line-height: 1.45; }
+.next-actions p, #next-empty { font-size: .875rem; line-height: 1.45; }
+#next-empty { color: var(--muted); }
 .decision-history summary { min-height: 44px; padding: .75rem 0; color: var(--muted); cursor: pointer; }
 .claude-activity p { margin-top: .4rem; color: var(--muted); font-size: .875rem; line-height: 1.45; }
 .claude-activity a { display: inline-flex; align-items: center; min-height: 44px; font-size: .875rem; }
@@ -66,6 +69,12 @@ button { font: inherit; }
 .choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem; }
 .button, .subtle { min-height: 44px; min-width: 44px; padding: .55rem .65rem; border: 1px solid var(--line); border-radius: .5rem; background: #2a3850; color: #eff3fa; font-size: .8rem; font-weight: 700; cursor: pointer; }
 .primary { background: #c0ccff; border-color: #c0ccff; color: #121b32; }
+.action-required, .next-actions p, .details .next, .decision .question,
+.claude-activity .action-required { color: var(--action); }
+a.button { text-decoration: none; }
+.button.action-required { background: #421f2b; border-color: var(--action); }
+.button.approve { background: var(--approval); border-color: var(--approval); color: #102619; }
+.button.approve[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #205637; border-color: #205637; }
 .subtle { background: transparent; color: var(--accent); }
 .button:not(:disabled):hover, .subtle:not(:disabled):hover { filter: brightness(1.2); }
 .button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #dbe1ff; border-color: #dbe1ff; }

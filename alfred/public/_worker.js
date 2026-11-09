@@ -494,7 +494,7 @@ function pilotPanel(env, pilot) {
     return '<h2>Live Claude pilot</h2><p>Waiting for the Anthropic API credential.</p>';
   }
   return '<h2>Live Claude pilot</h2><p>' + PILOT_SCOPE + '</p>' +
-    '<form method="post" action="/handoff/pilot/review"><button class="button primary" type="submit">Review live pilot</button></form>';
+    '<form method="post" action="/handoff/pilot/review"><button class="button action-required" type="submit">Review live pilot</button></form>';
 }
 
 async function pilotEvidence(token) {
@@ -559,7 +559,7 @@ async function livePilot(request, env, path, token, ctx) {
       '<p>Maximum authorised spend £1. One Haiku 4.5 request with 512 output tokens. Model token charges are bounded below US$0.21 at published rates.</p>',
       '<form method="post" action="/handoff/pilot/approve">',
       '<input type="hidden" name="proposal" value="' + proposal + '">',
-      '<button class="button primary" type="submit">Approve one run · £1 cap</button></form>',
+      '<button class="button approve" type="submit">Approve one run · £1 cap</button></form>',
     ].join(''));
   }
 
@@ -625,7 +625,7 @@ async function claudeHandoff(request, env, path, token, ctx) {
       escapeHtml(issue.body).replaceAll('\n', '<br>') + '</p></details>',
       '<form method="post" action="/handoff/approve">',
       '<input type="hidden" name="proposal" value="' + id + '">',
-      '<button class="button primary" type="submit">Approve £0 rehearsal</button></form>',
+      '<button class="button approve" type="submit">Approve £0 rehearsal</button></form>',
     ].join(''));
   }
 
