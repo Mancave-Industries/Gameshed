@@ -22,7 +22,10 @@ The preview environment needs these bindings.
 | ALFRED_SESSION_KEY | Random 32 bytes encoded as unpadded base64url, encrypted Cloudflare secret |
 | ALFRED_DECISION_ISSUES | JSON object mapping the four decision keys below to the corresponding issue numbers |
 
-The private GitHub App belongs to Mancave-Industries. Its user callback is
+Open /setup/github on the canonical preview to register and install the private
+GitHub App. GitHub returns credentials to Alfred through the setup callback, and
+Alfred encrypts them in the preview D1 database. The environment bindings can
+also supply credentials directly. The app belongs to Mancave-Industries. Its user callback is
 ALFRED_ORIGIN followed by /auth/callback. Enable expiring user tokens and
 disable webhooks. Install on just the four repositories below with Metadata
 read, Pull requests read and Issues read/write. The preview checks the

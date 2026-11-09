@@ -3,6 +3,7 @@ const OWNER_ID = 287470662;
 const CHOICES = new Set(['YES', 'NO', 'DEFER']);
 const SESSION_COOKIE = '__Host-alfred_session';
 const STATE_COOKIE = '__Host-alfred_oauth';
+const SETUP_COOKIE = '__Host-alfred_github_setup';
 const OAUTH_TTL = 600;
 const SESSION_TTL = 6 * 60 * 60;
 const ASSETS = new Set(['/', '/index.html', '/app.js', '/styles.css']);
@@ -106,8 +107,15 @@ function validId(value) {
 }
 
 function configured(env) {
-  return Boolean(env.ALFRED_ORIGIN && env.ALFRED_DB && env.GITHUB_APP_CLIENT_ID &&
-    env.GITHUB_APP_CLIENT_SECRET && validId(env.ALFRED_SESSION_KEY));
+  return Boolean(env.ALFRED_ORIGIN && env.ALFRED_DB && validId(env.ALFRED_SESSION_KEY));
+}
+
+async function githubApp(env) {
+  if (env.GITHUB_APP_CLIENT_ID && env.GITHUB_APP_CLIENT_SECRET) {
+    return { clientId: env.GITHUB_APP_CLIENT_ID, clientSecret: env.GITHUB_APP_CLIENT_SECRET };
+  }
+  const row = await env.ALFRED_DB.prepare('SELECT credentials FROM github_app WHERE id = 1').first();
+  return row ? JSON.parse(await decryptToken(env, row.credentials, 'github-app')) : null;
 }
 
 async function tokenKey(env) {
@@ -150,7 +158,91 @@ function callbackUrl(env) {
   return env.ALFRED_ORIGIN + '/auth/callback';
 }
 
-async function startLogin(env) {
+function setupPage(content, cookies = []) {
+  const headers = new Headers({ 'Content-Type': 'text/html; charset=utf-8' });
+  for (const value of cookies) headers.append('Set-Cookie', value);
+  return new Response([
+    '<!doctype html><html lang="en"><meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width,initial-scale=1">',
+    '<title>Connect GitHub to Alfred</title><link rel="stylesheet" href="/styles.css">',
+    '<main class="shell"><h1>Connect GitHub to Alfred</h1>',
+    content, '</main></html>',
+  ].join(''), { headers });
+}
+
+async function startGithubSetup(env, app) {
+  if (app) {
+    const install = app.slug ? '<p><a class="button primary" href="https://github.com/apps/' + app.slug +
+      '/installations/new">Install the GitHub App</a></p>' +
+      '<p>Choose Only select repositories and select Deceivers, Science_Budy, MANCAVE-INDUSTRIES.github.io and risk-assessment-songbook.</p>' : '';
+    return setupPage(install + '<p><a href="/">Open Alfred</a> after installing the app.</p>');
+  }
+  const state = randomId();
+  const now = Date.now();
+  await env.ALFRED_DB.batch([
+    env.ALFRED_DB.prepare('DELETE FROM oauth_attempts WHERE expires_at <= ?').bind(now),
+    env.ALFRED_DB.prepare('INSERT INTO oauth_attempts (id, verifier, expires_at) VALUES (?, ?, ?)')
+      .bind(await sha256('setup:' + state), 'github-app', now + OAUTH_TTL * 1000),
+  ]);
+  const manifest = JSON.stringify({
+    name: 'Alfred Control Centre Preview',
+    url: env.ALFRED_ORIGIN,
+    redirect_url: env.ALFRED_ORIGIN + '/setup/github/callback',
+    callback_urls: [callbackUrl(env)],
+    hook_attributes: { url: env.ALFRED_ORIGIN, active: false },
+    public: false,
+    default_permissions: { metadata: 'read', issues: 'write', pull_requests: 'read' },
+    default_events: [],
+  }).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
+  return setupPage([
+    '<p>Use the Mancave Industries GitHub account to register the private app.</p>',
+    '<form method="post" action="https://github.com/settings/apps/new?state=' + state + '">',
+    '<input type="hidden" name="manifest" value="' + manifest + '">',
+    '<button class="button primary" type="submit">Set up GitHub</button></form>',
+  ].join(''), [cookie(SETUP_COOKIE, state, OAUTH_TTL)]);
+}
+
+async function finishGithubSetup(request, env, url) {
+  const clear = cookie(SETUP_COOKIE, '', 0);
+  const state = url.searchParams.get('state');
+  const code = url.searchParams.get('code');
+  if (!validId(state) || state !== getCookie(request, SETUP_COOKIE) ||
+      !/^[a-zA-Z0-9_-]{10,512}$/.test(code ?? '')) {
+    return setupPage('<p>Setup expired. <a href="/setup/github">Start again</a>.</p>', [clear]);
+  }
+  const attempt = await env.ALFRED_DB.prepare(
+    'DELETE FROM oauth_attempts WHERE id = ? AND expires_at > ? RETURNING verifier',
+  ).bind(await sha256('setup:' + state), Date.now()).first();
+  if (!attempt) return setupPage('<p>Setup expired. <a href="/setup/github">Start again</a>.</p>', [clear]);
+
+  const response = await fetch('https://api.github.com/app-manifests/' + code + '/conversions', {
+    method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(8000),
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'Alfred-Control-Centre',
+      'X-GitHub-Api-Version': '2026-03-10',
+    },
+  });
+  if (!response.ok) {
+    return setupPage('<p>GitHub did not complete registration. <a href="/setup/github">Start again</a>.</p>', [clear]);
+  }
+  const app = await response.json();
+  const permissions = app.permissions ?? {};
+  if (app.owner?.id !== OWNER_ID || app.external_url !== env.ALFRED_ORIGIN ||
+      permissions.issues !== 'write' || permissions.pull_requests !== 'read' ||
+      Object.keys(permissions).some(name => !['issues', 'pull_requests', 'metadata'].includes(name)) ||
+      typeof app.slug !== 'string' || !/^[a-z0-9-]+$/.test(app.slug) ||
+      typeof app.client_id !== 'string' || !app.client_id ||
+      typeof app.client_secret !== 'string' || !app.client_secret) {
+    return setupPage('<p>Register the Alfred app under the Mancave Industries account. <a href="/setup/github">Start again</a>.</p>', [clear]);
+  }
+  const credentials = JSON.stringify({ clientId: app.client_id, clientSecret: app.client_secret, slug: app.slug });
+  await env.ALFRED_DB.prepare('INSERT OR IGNORE INTO github_app (id, credentials) VALUES (1, ?)')
+    .bind(await encryptToken(env, credentials, 'github-app')).run();
+  return redirect('/setup/github', [clear]);
+}
+
+async function startLogin(env, app) {
   const state = randomId();
   const verifier = randomId();
   const now = Date.now();
@@ -161,14 +253,14 @@ async function startLogin(env) {
       .bind(await sha256(state), verifier, now + OAUTH_TTL * 1000),
   ]);
   const params = new URLSearchParams({
-    client_id: env.GITHUB_APP_CLIENT_ID, redirect_uri: callbackUrl(env), state, login: OWNER,
+    client_id: app.clientId, redirect_uri: callbackUrl(env), state, login: OWNER,
     code_challenge: await sha256(verifier), code_challenge_method: 'S256', allow_signup: 'false',
     scope: 'offline_access',
   });
   return redirect('https://github.com/login/oauth/authorize?' + params, [cookie(STATE_COOKIE, state, OAUTH_TTL)]);
 }
 
-async function finishLogin(request, env, url) {
+async function finishLogin(request, env, url, app) {
   const clearState = cookie(STATE_COOKIE, '', 0);
   const state = url.searchParams.get('state');
   const code = url.searchParams.get('code');
@@ -184,7 +276,7 @@ async function finishLogin(request, env, url) {
     method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(8000),
     headers: { Accept: 'application/json' },
     body: new URLSearchParams({
-      client_id: env.GITHUB_APP_CLIENT_ID, client_secret: env.GITHUB_APP_CLIENT_SECRET,
+      client_id: app.clientId, client_secret: app.clientSecret,
       redirect_uri: callbackUrl(env), code, code_verifier: attempt.verifier,
     }),
   });
@@ -341,7 +433,8 @@ async function route(request, env) {
   if (ASSETS.has(path) && (request.method === 'GET' || request.method === 'HEAD')) {
     return env.ASSETS.fetch(request);
   }
-  if (!path.startsWith('/api/') && !path.startsWith('/auth/')) {
+  const isSetup = path === '/setup/github' || path === '/setup/github/callback';
+  if (!path.startsWith('/api/') && !path.startsWith('/auth/') && !isSetup) {
     return json({ error: 'Page not found.' }, 404);
   }
   if (!configured(env)) return json({ error: 'GitHub sign-in is awaiting preview configuration.' }, 503);
@@ -352,8 +445,14 @@ async function route(request, env) {
   if (isWrite && request.headers.get('Origin') !== url.origin) {
     return json({ error: 'Request rejected.' }, 403);
   }
-  if (path === '/auth/login' && isWrite) return startLogin(env);
-  if (path === '/auth/callback' && isRead) return finishLogin(request, env, url);
+  const app = await githubApp(env);
+  if (isSetup && isRead) {
+    if (path === '/setup/github') return startGithubSetup(env, app);
+    return app ? redirect('/setup/github') : finishGithubSetup(request, env, url);
+  }
+  if (!app) return json({ error: 'GitHub sign-in is awaiting preview configuration.' }, 503);
+  if (path === '/auth/login' && isWrite) return startLogin(env, app);
+  if (path === '/auth/callback' && isRead) return finishLogin(request, env, url, app);
   if (path === '/auth/logout' && isWrite) return signOut(request, env);
   if (path === '/api/dashboard' && isRead) {
     const token = await session(request, env);

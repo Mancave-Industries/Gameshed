@@ -93,16 +93,22 @@ async function deploy() {
     'pages', 'deploy', 'alfred/public', '--project-name', projectName, '--branch', previewBranch,
   ], { stdio: 'inherit', env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: id } });
 
-  for (let attempt = 0; attempt < 10; attempt++) {
+  let lastCheck = 'network unavailable';
+  for (let attempt = 0; attempt < 12; attempt++) {
     const response = await fetch(origin, { redirect: 'error', signal: AbortSignal.timeout(5000) }).catch(() => null);
     if (response?.ok && (await response.text()).includes('<title>Alfred Control Centre</title>')) {
-      console.log('Verified preview: ' + origin);
+      const setup = await fetch(origin + '/setup/github', { redirect: 'error', signal: AbortSignal.timeout(5000) });
+      if (!setup.ok || !(await setup.text()).includes('<title>Connect GitHub to Alfred</title>')) {
+        throw new Error('Alfred loaded, but GitHub setup returned HTTP ' + setup.status + '.');
+      }
+      console.log('Verified preview and GitHub setup: ' + origin);
       if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, 'Alfred preview: ' + origin + '\n');
       return;
     }
-    await wait(3000);
+    if (response) lastCheck = 'HTTP ' + response.status;
+    await wait(5000);
   }
-  throw new Error('The Alfred preview did not return the expected page.');
+  throw new Error('The Alfred preview did not return the expected page (' + lastCheck + ').');
 }
 
 deploy().catch(error => {

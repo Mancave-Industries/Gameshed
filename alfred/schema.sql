@@ -9,3 +9,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     token TEXT NOT NULL,
     expires_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS github_app (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    credentials TEXT NOT NULL
+);
