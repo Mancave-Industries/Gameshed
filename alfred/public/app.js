@@ -71,7 +71,7 @@ function renderActions(projectList, pilot) {
   pilotReview.hidden = !pilotPending;
   approvalStatus.textContent = unavailable
     ? 'Some approval records could not be checked. Tap Refresh to try again.'
-    : awaiting.length || pilotPending ? '' : 'No decision needs you right now. See below for the work still to do.';
+    : awaiting.length || pilotPending ? '' : 'No project approvals waiting. Check Alfred workflows above for new decisions.';
   approvalStatus.hidden = !approvalStatus.textContent;
 
   const entries = [];
@@ -229,6 +229,81 @@ function renderCard(project, projectList, pilot) {
   return card;
 }
 
+const workflowItems = document.querySelector('#workflow-items');
+const workflowStatus = document.querySelector('#workflow-status');
+const workflowLabels = {
+  decision: 'Your decision', deferred: 'Deferred', queued: 'Queued for Alfred',
+  running: 'In progress', blocked: 'Blocked', completed: 'Result ready',
+};
+
+function renderWorkflows(workflows) {
+  workflowItems.replaceChildren();
+  workflowStatus.textContent = workflows
+    ? workflows.length ? '' : 'No workflows are open.'
+    : 'Alfred couldn’t check the workflow queue. Tap Refresh to try again.';
+  if (!workflows) return;
+  for (const workflow of workflows) {
+    const item = document.createElement('section');
+    item.className = 'decision';
+    const heading = document.createElement('h4');
+    heading.textContent = workflow.project + ' · ' + workflow.title;
+    const status = document.createElement('p');
+    status.className = 'decision-status';
+    status.textContent = workflowLabels[workflow.status] +
+      (workflow.choice ? ' · ' + workflow.options.find(option => option.id === workflow.choice)?.label : '');
+    const summary = document.createElement('p');
+    summary.className = 'activity';
+    summary.textContent = workflow.summary;
+    item.append(heading, status, summary);
+    if (workflow.result) {
+      const result = document.createElement('p');
+      result.className = 'workflow-result';
+      result.textContent = workflow.result;
+      item.append(result);
+    }
+    if (['decision', 'deferred'].includes(workflow.status)) {
+      const actions = document.createElement('div');
+      actions.className = 'workflow-options';
+      const options = workflow.options.concat(workflow.status === 'decision' ? [{ id: 'defer', label: 'Decide later' }] : []);
+      for (const [index, option] of options.entries()) {
+        const row = document.createElement('div');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = index === 0 ? 'button approve' : 'button';
+        button.textContent = option.label;
+        row.append(button);
+        if (option.detail) {
+          const detail = document.createElement('p');
+          detail.className = 'activity';
+          detail.textContent = option.detail;
+          row.append(detail);
+        }
+        actions.append(row);
+        button.addEventListener('click', async () => {
+          actions.inert = true;
+          status.textContent = 'Recording your choice…';
+          try {
+            const saved = await api('/api/workflows/' + workflow.number + '/choice', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ option: option.id, label: option.label, detail: option.detail }),
+            });
+            if (!saved.workflow) throw new Error('Refresh to check whether your choice was saved.');
+            renderWorkflows(workflows.map(current => current.number === workflow.number ? saved.workflow : current));
+            const accepted = option.id === 'defer' ? saved.workflow.status === 'deferred' : saved.workflow.choice === option.id;
+            workflowStatus.textContent = accepted ? 'Workflow updated.' : 'Another choice was recorded first.';
+          } catch (error) {
+            status.textContent = error.message;
+            actions.inert = false;
+          }
+        });
+      }
+      item.append(actions);
+    }
+    workflowItems.append(item);
+  }
+}
+
 async function loadDashboard() {
   refresh.disabled = true;
   retry.disabled = true;
@@ -237,7 +312,11 @@ async function loadDashboard() {
   pilotReview.inert = true;
   freshness.textContent = 'Checking GitHub…';
   try {
-    const data = await api('/api/dashboard');
+    const [data, workflowQueue] = await Promise.all([
+      api('/api/dashboard'),
+      api('/api/workflows').catch(() => null),
+    ]);
+    renderWorkflows(workflowQueue?.workflows);
     const pilot = data.claudePilot;
     pendingDecisions.replaceChildren();
     const cards = data.projects.map(project => renderCard(project, data.projects, pilot));

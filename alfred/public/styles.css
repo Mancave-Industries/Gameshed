@@ -101,3 +101,7 @@ footer { margin-top: 1.25rem; }
 .ask-alfred label { font-size: .875rem; font-weight: 650; }
 .ask-alfred textarea { width: 100%; padding: .65rem; background: var(--bg, #101827); color: inherit; border: 1px solid var(--line); border-radius: .5rem; font: inherit; font-size: 1rem; resize: vertical; }
 #ask-response { color: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+#workflow-status { color: var(--muted); font-size: .875rem; }
+.workflow-options { display: grid; gap: .75rem; margin-top: .75rem; }
+.workflow-result { margin-top: .65rem; white-space: pre-wrap; overflow-wrap: anywhere; }
