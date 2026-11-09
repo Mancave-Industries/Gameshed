@@ -21,8 +21,9 @@ const PROJECTS = [
         status: 'Release evidence reviewed. All six narrator packs passed asset integrity.',
         next: 'Restore Chromium in CI and rerun the gameplay and narration suite. Review the four provisional portraits.',
         review: {
-          label: 'Open narrator release notes', path: 'pull/14',
-          instruction: 'Decide whether to keep or replace the provisional portraits for Timothy, Cate, Kay and Penelope.',
+          label: 'Review narrator release',
+          summary: 'The six voice packs passed asset checks. Timothy, Cate, Kay and Penelope still use provisional portraits. The full gameplay and narration test stopped before it ran.',
+          next: 'Alfred’s next step is to prepare a side-by-side portrait preview and get the blocked test rerun. There’s no portrait approval to give yet.',
         },
       },
       NO: { next: 'Leave the release audit off the workstack.' },
@@ -41,8 +42,9 @@ const PROJECTS = [
         blocker: 'The draft teaching packs need review and the private iPhone pilot still needs validation.',
         next: 'Review one existing Biology topic, then validate it on iPhone as the first pilot.',
         review: {
-          label: 'Open Biology draft', path: 'pull/18',
-          instruction: 'Pick one Biology topic from the draft to try in the iPhone pilot.',
+          label: 'Review the Biology pilot',
+          summary: 'The draft covers 97 Biology sections. Tests used a simulated tutor. The teaching packs still need an accuracy check, and the build has yet to be tried on a real iPhone.',
+          next: 'Alfred’s next step is to prepare one Osmosis lesson for review. Your iPhone check comes once a private preview is ready.',
         },
       },
       NO: { next: 'Agree the coverage and validation criteria for the full first release.' },
@@ -414,6 +416,8 @@ async function projectState(token, env, project) {
     activity: issuesOk && pullsOk ? 'live' : issuesOk || pullsOk ? 'partial' : 'unavailable',
     tasks: tasks.map(item => ({
       title: item.title, kind: item.kind, number: item.number,
+      description: item.body?.trim().slice(0, 1800) ?? '',
+      excerpt: (item.body?.trim().length ?? 0) > 1800,
       url: repositoryUrl(project.repo) + '/' + item.path + item.number,
     })),
     decision: decision.status === 'fulfilled' ? decision.value : null,

@@ -64,6 +64,7 @@
       </section>
       <section id="project-reviews" class="card workstack" aria-labelledby="review-heading" hidden>
         <h3 id="review-heading">Project reviews</h3>
+        <p class="activity">Read the update and see what Alfred needs to prepare next.</p>
         <ul id="review-actions" class="next-actions"></ul>
       </section>
       <h2 class="project-heading">Project status</h2>
@@ -78,7 +79,6 @@
             <div class="eyebrow priority"></div>
             <h3></h3>
           </div>
-          <a class="repo-link">Repo <span aria-hidden="true">↗</span></a>
         </div>
         <p class="project-status"></p>
         <dl class="details">
@@ -86,10 +86,14 @@
           <div><dt>Next</dt><dd class="next"></dd></div>
         </dl>
         <div class="work">
-          <h4>Open work</h4>
+          <h4>Work in progress</h4>
           <p class="activity"></p>
           <ul class="tasks"></ul>
-          <ul class="references" aria-label="Brief sources"></ul>
+          <details class="technical-sources">
+            <summary>Technical sources</summary>
+            <a class="repo-link">GitHub repository <span aria-hidden="true">↗</span></a>
+            <ul class="references" aria-label="Brief sources"></ul>
+          </details>
         </div>
         <section class="decision" aria-label="Project decision">
           <h3 class="decision-project" hidden></h3>

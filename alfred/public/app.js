@@ -81,13 +81,16 @@ function renderActions(projectList, pilot) {
     const item = document.createElement('li');
     const heading = document.createElement('h4');
     heading.textContent = project.name;
-    const instruction = document.createElement('p');
-    instruction.textContent = review.instruction;
-    const link = document.createElement('a');
-    link.className = 'button action-required';
-    link.href = project.repositoryUrl + '/' + review.path;
-    link.textContent = review.label;
-    item.append(heading, instruction, link);
+    const details = document.createElement('details');
+    const toggle = document.createElement('summary');
+    toggle.className = 'button';
+    toggle.textContent = review.label;
+    const summary = document.createElement('p');
+    summary.textContent = review.summary;
+    const next = document.createElement('p');
+    next.textContent = review.next;
+    details.append(toggle, summary, next);
+    item.append(heading, details);
     entries.push(item);
   }
   reviewActions.replaceChildren(...entries);
@@ -120,7 +123,19 @@ function renderCard(project, projectList, pilot) {
     activity.hidden = true;
   }
   for (const task of project.tasks) {
-    appendLink(query('.tasks'), task.kind + ' #' + task.number + ' · ' + task.title, task.url);
+    const item = document.createElement('li');
+    const details = document.createElement('details');
+    const title = document.createElement('summary');
+    title.textContent = task.title;
+    const description = document.createElement('p');
+    description.className = 'task-description';
+    description.textContent = task.description
+      ? task.description + (task.excerpt ? '…' : '')
+      : 'No description was provided for this work item.';
+    details.append(title, description);
+    item.append(details);
+    query('.tasks').append(item);
+    appendLink(query('.references'), task.kind + ' #' + task.number, task.url);
   }
   for (const ref of project.references) appendLink(query('.references'), ref.title, ref.url);
 
