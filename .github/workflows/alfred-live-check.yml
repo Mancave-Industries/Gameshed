@@ -1,0 +1,49 @@
+name: Verify Alfred preview sign-in
+on:
+  push:
+    branches: [feature/alfred-control-centre-20261108]
+    paths: ['.github/workflows/alfred-live-check.yml']
+permissions: {}
+jobs:
+  verify:
+    if: github.repository == 'Mancave-Industries/Gameshed'
+    runs-on: ubuntu-24.04
+    environment: Alfred-preview
+    timeout-minutes: 3
+    steps:
+      - name: Verify the hosted preview and owner session
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const account = '34c51add54418c2a9d8c38b9be2420e8';
+          const root = 'https://api.cloudflare.com/client/v4/accounts/' + account + '/d1/database';
+          async function api(url, query) {
+            const response = await fetch(url, {
+              method: query ? 'POST' : 'GET',
+              signal: AbortSignal.timeout(10000),
+              headers: { Authorization: 'Bearer ' + process.env.CLOUDFLARE_API_TOKEN, 'Content-Type': 'application/json' },
+              body: query && JSON.stringify(query),
+            });
+            assert.ok(response.ok, 'D1 API returned HTTP ' + response.status);
+            const data = await response.json();
+            assert.ok(data.success, 'D1 query failed');
+            return data.result;
+          }
+          const name = 'alfred-control-centre-1395042959-sessions';
+          const database = (await api(root + '?name=' + name)).find(row => row.name === name);
+          assert.ok(database, 'Alfred preview database is missing');
+          const [{ results: [row] }] = await api(root + '/' + database.uuid + '/query', {
+            sql: 'SELECT EXISTS(SELECT 1 FROM github_app) AS app_configured, EXISTS(SELECT 1 FROM sessions WHERE expires_at > ?) AS owner_signed_in',
+            params: [Date.now()],
+          });
+          assert.equal(row.app_configured, 1, 'GitHub app registration has not been saved');
+          assert.equal(row.owner_signed_in, 1, 'An active owner session is not present');
+          const origin = 'https://review.alfred-control-centre-1395042959.pages.dev';
+          const page = await fetch(origin, { signal: AbortSignal.timeout(10000) });
+          assert.ok(page.ok && (await page.text()).includes('<title>Alfred Control Centre</title>'), 'Alfred preview did not load');
+          const signedOut = await fetch(origin + '/api/dashboard', { signal: AbortSignal.timeout(10000) });
+          assert.equal(signedOut.status, 401, 'The dashboard API must require authentication');
+          console.log('Verified the hosted page, private API and active owner GitHub session.');
+          NODE
