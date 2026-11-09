@@ -52,6 +52,11 @@
         </form>
         <div id="pending-decisions"></div>
       </section>
+      <section id="project-reviews" class="card workstack" aria-labelledby="review-heading" hidden>
+        <h3 id="review-heading">What happened and what’s next</h3>
+        <p class="activity">Reviewed on 9 November 2026. These are the next steps identified in the review.</p>
+        <ul id="review-actions" class="next-actions"></ul>
+      </section>
       <section class="card workstack ask-alfred" aria-labelledby="ask-heading">
         <h3 id="ask-heading">Ask Alfred</h3>
         <p id="ask-help">Get a read-only answer from Claude using the latest dashboard. Each question uses the separate £1 trial budget, with a conservative US$0.75 API ceiling.</p>
@@ -71,11 +76,6 @@
           <p id="claude-result"></p>
         </details>
         <a id="claude-handoff" class="button" href="/handoff">Open Claude handoff</a>
-      </section>
-      <section id="project-reviews" class="card workstack" aria-labelledby="review-heading" hidden>
-        <h3 id="review-heading">Project reviews</h3>
-        <p class="activity">Read the update and see what Alfred needs to prepare next.</p>
-        <ul id="review-actions" class="next-actions"></ul>
       </section>
       <h2 class="project-heading">Project status</h2>
       <div class="grid" id="projects"></div>

@@ -71,7 +71,7 @@ function renderActions(projectList, pilot) {
   pilotReview.hidden = !pilotPending;
   approvalStatus.textContent = unavailable
     ? 'Some approval records could not be checked. Tap Refresh to try again.'
-    : awaiting.length || pilotPending ? '' : 'You’re all caught up. No approvals waiting.';
+    : awaiting.length || pilotPending ? '' : 'No decision needs you right now. See below for the work still to do.';
   approvalStatus.hidden = !approvalStatus.textContent;
 
   const entries = [];
@@ -81,16 +81,11 @@ function renderActions(projectList, pilot) {
     const item = document.createElement('li');
     const heading = document.createElement('h4');
     heading.textContent = project.name;
-    const details = document.createElement('details');
-    const toggle = document.createElement('summary');
-    toggle.className = 'button';
-    toggle.textContent = review.label;
     const summary = document.createElement('p');
     summary.textContent = review.summary;
     const next = document.createElement('p');
     next.textContent = review.next;
-    details.append(toggle, summary, next);
-    item.append(heading, details);
+    item.append(heading, summary, next);
     entries.push(item);
   }
   reviewActions.replaceChildren(...entries);
@@ -301,7 +296,7 @@ askForm.addEventListener('submit', async event => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question }),
     });
-    askResponse.textContent = result.answer;
+    askResponse.textContent = result.answer + (result.truncated ? '\n\nFor more detail, ask about one project at a time.' : '');
   } catch (error) {
     askResponse.textContent = error.message;
     if (error.status === 401) showConnection(error.message, { login: true });
