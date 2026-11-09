@@ -158,16 +158,16 @@ function callbackUrl(env) {
   return env.ALFRED_ORIGIN + '/auth/callback';
 }
 
-function setupPage(content, cookies = []) {
+function htmlPage(content, cookies = [], title = 'Connect GitHub to Alfred', status = 200) {
   const headers = new Headers({ 'Content-Type': 'text/html; charset=utf-8' });
   for (const value of cookies) headers.append('Set-Cookie', value);
   return new Response([
     '<!doctype html><html lang="en"><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width,initial-scale=1">',
-    '<title>Connect GitHub to Alfred</title><link rel="stylesheet" href="/styles.css">',
-    '<main class="shell"><h1>Connect GitHub to Alfred</h1>',
+    '<title>' + title + '</title><link rel="stylesheet" href="/styles.css">',
+    '<main class="shell"><h1>' + title + '</h1>',
     content, '</main></html>',
-  ].join(''), { headers });
+  ].join(''), { headers, status });
 }
 
 async function startGithubSetup(env, app) {
@@ -175,7 +175,7 @@ async function startGithubSetup(env, app) {
     const install = app.slug ? '<p><a class="button primary" href="https://github.com/apps/' + app.slug +
       '/installations/new">Install the GitHub App</a></p>' +
       '<p>Choose Only select repositories and select Deceivers, Science_Budy, MANCAVE-INDUSTRIES.github.io and risk-assessment-songbook.</p>' : '';
-    return setupPage(install + '<p><a href="/">Open Alfred</a> after installing the app.</p>');
+    return htmlPage(install + '<p><a href="/">Open Alfred</a> after installing the app.</p>');
   }
   const state = randomId();
   const now = Date.now();
@@ -194,7 +194,7 @@ async function startGithubSetup(env, app) {
     default_permissions: { metadata: 'read', issues: 'write', pull_requests: 'read' },
     default_events: [],
   }).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
-  return setupPage([
+  return htmlPage([
     '<p>Use the Mancave Industries GitHub account to register the private app.</p>',
     '<form method="post" action="https://github.com/settings/apps/new?state=' + state + '">',
     '<input type="hidden" name="manifest" value="' + manifest + '">',
@@ -208,12 +208,12 @@ async function finishGithubSetup(request, env, url) {
   const code = url.searchParams.get('code');
   if (!validId(state) || state !== getCookie(request, SETUP_COOKIE) ||
       !/^[a-zA-Z0-9_-]{10,512}$/.test(code ?? '')) {
-    return setupPage('<p>Setup expired. <a href="/setup/github">Start again</a>.</p>', [clear]);
+    return htmlPage('<p>Setup expired. <a href="/setup/github">Start again</a>.</p>', [clear]);
   }
   const attempt = await env.ALFRED_DB.prepare(
     'DELETE FROM oauth_attempts WHERE id = ? AND expires_at > ? RETURNING verifier',
   ).bind(await sha256('setup:' + state), Date.now()).first();
-  if (!attempt) return setupPage('<p>Setup expired. <a href="/setup/github">Start again</a>.</p>', [clear]);
+  if (!attempt) return htmlPage('<p>Setup expired. <a href="/setup/github">Start again</a>.</p>', [clear]);
 
   const response = await fetch('https://api.github.com/app-manifests/' + code + '/conversions', {
     method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(8000),
@@ -224,7 +224,7 @@ async function finishGithubSetup(request, env, url) {
     },
   });
   if (!response.ok) {
-    return setupPage('<p>GitHub did not complete registration. <a href="/setup/github">Start again</a>.</p>', [clear]);
+    return htmlPage('<p>GitHub did not complete registration. <a href="/setup/github">Start again</a>.</p>', [clear]);
   }
   const app = await response.json();
   const permissions = app.permissions ?? {};
@@ -234,7 +234,7 @@ async function finishGithubSetup(request, env, url) {
       typeof app.slug !== 'string' || !/^[a-z0-9-]+$/.test(app.slug) ||
       typeof app.client_id !== 'string' || !app.client_id ||
       typeof app.client_secret !== 'string' || !app.client_secret) {
-    return setupPage('<p>Register the Alfred app under the Mancave Industries account. <a href="/setup/github">Start again</a>.</p>', [clear]);
+    return htmlPage('<p>Register the Alfred app under the Mancave Industries account. <a href="/setup/github">Start again</a>.</p>', [clear]);
   }
   const credentials = JSON.stringify({ clientId: app.client_id, clientSecret: app.client_secret, slug: app.slug });
   await env.ALFRED_DB.prepare('INSERT OR IGNORE INTO github_app (id, credentials) VALUES (1, ?)')
@@ -427,6 +427,89 @@ async function recordDecision(request, token, env, id) {
   return json({ decision: decisionRecord(issue, project, number) });
 }
 
+const CLAUDE_REPO = 'Deceivers';
+const HANDOFF_TTL = 10 * 60 * 1000;
+
+function handoffPage(content, status = 200) {
+  return htmlPage(content + '<p><a href="/">Back to Alfred</a></p>', [], 'Claude handoff', status);
+}
+
+function escapeHtml(value) {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+async function handoffIssue(token, number) {
+  const issue = await github(token, '/repos/' + OWNER + '/' + CLAUDE_REPO + '/issues/' + number);
+  if (issue.number !== number || issue.pull_request || issue.state !== 'open') return null;
+  return {
+    title: issue.title, body: issue.body ?? '',
+    revision: await sha256(JSON.stringify([issue.title, issue.body ?? ''])),
+  };
+}
+
+async function claudeHandoff(request, env, path, token) {
+  if (path === '/handoff' && request.method === 'GET') {
+    return handoffPage([
+      '<p>Run a free rehearsal of the approval gate using an open Deceivers issue.</p>',
+      '<p>Maximum cost £0. The rehearsal records an approval and makes zero Claude calls.</p>',
+      '<form method="post" action="/handoff/review"><label>Deceivers issue number ',
+      '<input type="number" name="issue" required min="1" inputmode="numeric"></label> ',
+      '<button class="button primary" type="submit">Review rehearsal</button></form>',
+    ].join(''));
+  }
+  if (request.method !== 'POST' ||
+      !['/handoff/review', '/handoff/approve'].includes(path)) {
+    return handoffPage('<p>Page not found.</p>', 404);
+  }
+
+  const form = await request.formData().catch(() => null);
+  const db = env.ALFRED_DB;
+  if (path === '/handoff/review') {
+    const rawIssue = form?.get('issue');
+    const issueNumber = Number(rawIssue);
+    if (typeof rawIssue !== 'string' || !/^[1-9][0-9]*$/.test(rawIssue) ||
+        !Number.isSafeInteger(issueNumber)) return handoffPage('<p>Enter a valid issue number.</p>', 400);
+    const issue = await handoffIssue(token, issueNumber);
+    if (!issue) return handoffPage('<p>Choose an open Deceivers issue.</p>', 409);
+    const id = randomId();
+    const now = Date.now();
+    await db.batch([
+      db.prepare('DELETE FROM claude_rehearsals WHERE expires_at <= ? AND used_at IS NULL').bind(now),
+      db.prepare('INSERT INTO claude_rehearsals (id, issue_number, revision, expires_at) VALUES (?, ?, ?, ?)')
+        .bind(id, issueNumber, issue.revision, now + HANDOFF_TTL),
+    ]);
+    return handoffPage([
+      '<p>Deceivers #' + issueNumber + ' · ' + escapeHtml(issue.title) + '</p>',
+      '<p>Scope: approval rehearsal only. Maximum cost £0. This approval expires in 10 minutes.</p>',
+      '<details><summary>Review the issue text</summary><p>' +
+      escapeHtml(issue.body).replaceAll('\n', '<br>') + '</p></details>',
+      '<form method="post" action="/handoff/approve">',
+      '<input type="hidden" name="proposal" value="' + id + '">',
+      '<button class="button primary" type="submit">Approve £0 rehearsal</button></form>',
+    ].join(''));
+  }
+
+  const id = form?.get('proposal');
+  if (!validId(id)) return handoffPage('<p>Open a new rehearsal to continue.</p>', 400);
+  const proposal = await db.prepare(
+    'SELECT issue_number, revision FROM claude_rehearsals WHERE id = ? AND expires_at > ? AND used_at IS NULL',
+  ).bind(id, Date.now()).first();
+  const unavailable = '<p>This rehearsal expired or was already used. <a href="/handoff">Start again</a>.</p>';
+  if (!proposal) return handoffPage(unavailable, 409);
+  const issue = await handoffIssue(token, proposal.issue_number);
+  if (!issue || issue.revision !== proposal.revision) {
+    return handoffPage('<p>The issue changed. <a href="/handoff">Review it again</a>.</p>', 409);
+  }
+  const consumed = await db.prepare(
+    'UPDATE claude_rehearsals SET used_at = ? WHERE id = ? AND expires_at > ? AND used_at IS NULL RETURNING id',
+  ).bind(Date.now(), id, Date.now()).first();
+  return consumed ? handoffPage([
+    '<p>One-use approval recorded for Deceivers #' + proposal.issue_number + '.</p>',
+    '<p>Rehearsal complete. Cost £0. Claude calls 0.</p>',
+    '<p><a href="/handoff">Open another rehearsal</a></p>',
+  ].join('')) : handoffPage(unavailable, 409);
+}
+
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -434,7 +517,8 @@ async function route(request, env) {
     return env.ASSETS.fetch(request);
   }
   const isSetup = path === '/setup/github' || path === '/setup/github/callback';
-  if (!path.startsWith('/api/') && !path.startsWith('/auth/') && !isSetup) {
+  const isHandoff = path === '/handoff' || path.startsWith('/handoff/');
+  if (!path.startsWith('/api/') && !path.startsWith('/auth/') && !isSetup && !isHandoff) {
     return json({ error: 'Page not found.' }, 404);
   }
   if (!configured(env)) return json({ error: 'GitHub sign-in is awaiting preview configuration.' }, 503);
@@ -451,6 +535,11 @@ async function route(request, env) {
     return app ? redirect('/setup/github') : finishGithubSetup(request, env, url);
   }
   if (!app) return json({ error: 'GitHub sign-in is awaiting preview configuration.' }, 503);
+  if (isHandoff) {
+    const token = await session(request, env);
+    return token ? claudeHandoff(request, env, path, token) :
+      handoffPage('<p>Sign in with GitHub from Alfred to open the handoff.</p>', 401);
+  }
   if (path === '/auth/login' && isWrite) return startLogin(env, app);
   if (path === '/auth/callback' && isRead) return finishLogin(request, env, url, app);
   if (path === '/auth/logout' && isWrite) return signOut(request, env);

@@ -48,6 +48,12 @@ answers. YES, NO and DEFER update the same record.
 
 ## Claude handoff
 
+Alfred's /handoff page provides a £0 rehearsal for an open Deceivers issue.
+The owner reviews the issue and approves once. The worker verifies the issue
+revision again and atomically consumes the expiring proposal. The rehearsal
+stores approval evidence in D1. It makes zero Claude calls.
+
+
 [Deceivers PR #4](https://github.com/Mancave-Industries/Deceivers/pull/4)
 contains the inactive design and a workflow example in docs/. The example
 requires a one-use verifier for a named run, its exact scope, cost ceiling

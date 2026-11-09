@@ -81,7 +81,12 @@ async function deploy() {
     }) },
   };
   if (!project.deployment_configs?.preview?.env_vars?.ALFRED_SESSION_KEY) {
-    envVars.ALFRED_SESSION_KEY = { type: 'secret_text', value: randomBytes(32).toString('base64url') };
+    const [{ results: [state] }] = await api(databasePath + '/' + database.uuid + '/query', 'POST', {
+      sql: 'SELECT EXISTS(SELECT 1 FROM github_app) AS configured, EXISTS(SELECT 1 FROM sessions) AS sessions',
+    });
+    if (!state.configured && !state.sessions) {
+      envVars.ALFRED_SESSION_KEY = { type: 'secret_text', value: randomBytes(32).toString('base64url') };
+    }
   }
   await api(target, 'PATCH', { deployment_configs: { preview: {
     compatibility_date: '2026-10-01',
@@ -101,7 +106,11 @@ async function deploy() {
       if (!setup.ok || !(await setup.text()).includes('<title>Connect GitHub to Alfred</title>')) {
         throw new Error('Alfred loaded, but GitHub setup returned HTTP ' + setup.status + '.');
       }
-      console.log('Verified preview and GitHub setup: ' + origin);
+      const handoff = await fetch(origin + '/handoff', { redirect: 'error', signal: AbortSignal.timeout(5000) });
+      if (handoff.status !== 401 || !(await handoff.text()).includes('<title>Claude handoff</title>')) {
+        throw new Error('The hosted Claude handoff must require sign-in.');
+      }
+      console.log('Verified preview, GitHub setup and the protected Claude handoff: ' + origin);
       if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, 'Alfred preview: ' + origin + '\n');
       return;
     }
