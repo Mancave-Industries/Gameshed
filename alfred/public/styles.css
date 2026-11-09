@@ -35,6 +35,9 @@ button { font: inherit; }
 .portfolio-header .subtle { flex: none; }
 #freshness { margin-top: .3rem; }
 .grid { display: grid; gap: .85rem; }
+.claude-activity { margin-bottom: .85rem; }
+.claude-activity p { margin-top: .4rem; color: var(--muted); font-size: .875rem; line-height: 1.45; }
+.claude-activity a { display: inline-flex; align-items: center; min-height: 44px; font-size: .875rem; }
 .card { min-width: 0; padding: 1rem; border: 1px solid var(--line); border-radius: .9rem; background: var(--panel); }
 .card-header { align-items: center; }
 .priority { margin-bottom: .24rem; color: #bfcaff; }

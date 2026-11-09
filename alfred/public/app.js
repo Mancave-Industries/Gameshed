@@ -7,6 +7,7 @@ const portfolio = document.querySelector('#portfolio');
 const projects = document.querySelector('#projects');
 const refresh = document.querySelector('#refresh');
 const freshness = document.querySelector('#freshness');
+const claudeRehearsal = document.querySelector('#claude-rehearsal');
 const cardTemplate = document.querySelector('#card');
 const signInResult = new URLSearchParams(location.search).get('sign-in');
 const dateFormat = new Intl.DateTimeFormat('en-GB', {
@@ -160,6 +161,11 @@ async function loadDashboard() {
     const data = await api('/api/dashboard');
     const cards = data.projects.map(renderCard);
     projects.replaceChildren(...cards);
+    const rehearsal = data.latestRehearsal;
+    claudeRehearsal.textContent = rehearsal
+      ? 'Latest £0 rehearsal completed for Deceivers #' + rehearsal.issueNumber +
+        ' · ' + dateFormat.format(new Date(rehearsal.completedAt))
+      : rehearsal === null ? 'No rehearsal approvals recorded yet.' : 'Rehearsal history unavailable.';
     freshness.textContent = 'GitHub checked ' + dateFormat.format(new Date(data.checkedAt)) +
       ' · Brief reviewed ' + data.briefDate;
     panel.hidden = true;

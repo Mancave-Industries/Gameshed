@@ -392,12 +392,18 @@ async function projectState(token, env, project) {
 async function dashboard(token, env) {
   const user = await github(token, '/user');
   if (user.id !== OWNER_ID) return json({ error: 'GitHub sign-in is required.' }, 401);
-  const projects = await Promise.all(PROJECTS.map(project => projectState(token, env, project)));
+  const [projects, latestRehearsal] = await Promise.all([
+    Promise.all(PROJECTS.map(project => projectState(token, env, project))),
+    env.ALFRED_DB.prepare(
+      'SELECT issue_number AS issueNumber, used_at AS completedAt FROM claude_rehearsals WHERE used_at IS NOT NULL ORDER BY used_at DESC LIMIT 1',
+    ).first().catch(() => undefined),
+  ]);
   return json({
     account: user.login,
     checkedAt: new Date().toISOString(),
     briefDate: '8 November 2026',
     projects,
+    latestRehearsal,
   });
 }
 
