@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, writeFile, readFile, cp, rm, lstat } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, cp, rm, lstat, chmod, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, dirname, join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -52,6 +52,13 @@ export async function verifyInContainer(checkout, spec, files, output, runner = 
   try {
     const clean = join(temporary, 'source');
     await cp(checkout, clean, { recursive: true, filter: p => !p.split('/').some(x => ['.git', 'node_modules', '.env', '.dev.vars'].includes(x)) });
+    async function makeReadable(path) {
+      const info = await lstat(path);
+      if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) throw new Error('Source must contain only regular files and directories.');
+      await chmod(path, info.isDirectory() ? 0o755 : 0o644);
+      if (info.isDirectory()) for (const name of await readdir(path)) await makeReadable(join(path, name));
+    }
+    await makeReadable(clean);
     for (const f of files) {
       const path = resolve(clean, f.path);
       if (!(await lstat(path)).isFile() || (await readFile(path, 'utf8')) !== f.content) throw new Error('Runner checkout differs from the approved source snapshot.');
