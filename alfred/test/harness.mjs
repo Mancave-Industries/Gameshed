@@ -4,7 +4,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { webcrypto } from 'node:crypto';
+import { webcrypto, createHash } from 'node:crypto';
 import worker from '../public/_worker.js';
 
 export const OWNER_ID = 287470662;
@@ -90,10 +90,37 @@ function fakeGithub(repos, log) {
   let nextComment = 7_000_000_000;
   const reply = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
   const issueJson = (issue) => ({ user: OWNER, comments: 0, updated_at: '2026-11-11T09:00:00Z', created_at: '2026-11-08T00:00:00Z', ...issue });
+  const refs = new Map();
+  const commits = new Map();
   return async (url, init = {}) => {
     const method = (init.method ?? 'GET').toUpperCase();
     log.push(method + ' ' + url.pathname + url.search);
     if (url.pathname === '/user') return reply({ ...OWNER });
+    const runMatch = /^\/repos\/Mancave-Industries\/Gameshed\/actions\/runs\/(\d+)$/.exec(url.pathname);
+    if (runMatch) return reply({ id: Number(runMatch[1]), head_sha: 'a'.repeat(40), path: '.github/workflows/alfred-execute.yml', event: 'issue_comment' });
+    const git = /^\/repos\/Mancave-Industries\/([^/]+)\/git\/(.+)$/.exec(url.pathname);
+    if (git) {
+      const [, repoName, path] = git;
+      const sources = repos[repoName]?.sources ?? {};
+      const digest = x => createHash('sha1').update(x).digest('hex');
+      if (path.startsWith('commits/')) return reply(commits.get(path.slice(8)) ?? { sha: path.slice(8), tree: { sha: 'base-tree' }, parents: [] });
+      if (path.startsWith('trees/') && method === 'GET') return reply({ truncated: false, tree: Object.entries(sources).map(([path, content]) => ({ path, type: 'blob', mode: '100644', sha: digest(content), size: Buffer.byteLength(content) })) });
+      if (path.startsWith('blobs/')) {
+        const content = Object.values(sources).find(c => digest(c) === path.slice(6));
+        return content === undefined ? reply({}, 404) : reply({ encoding: 'base64', content: Buffer.from(content).toString('base64') });
+      }
+      if (path === 'trees' && method === 'POST') return reply({ sha: digest(init.body) });
+      if (path === 'commits' && method === 'POST') {
+        const data = JSON.parse(init.body), sha = digest(init.body);
+        commits.set(sha, { sha, tree: { sha: data.tree }, parents: data.parents.map(sha => ({ sha })) });
+        return reply({ sha });
+      }
+      if (path === 'refs' && method === 'POST') {
+        const data = JSON.parse(init.body); refs.set(data.ref.replace(/^refs\//, ''), data.sha); return reply({ ref: data.ref, object: { sha: data.sha } });
+      }
+      if (path.startsWith('ref/')) return refs.has(path.slice(4)) ? reply({ object: { sha: refs.get(path.slice(4)) } }) : reply({}, 404);
+      return reply({}, 404);
+    }
     const match = /^\/repos\/Mancave-Industries\/([^/]+)\/(issues|pulls)(?:\/(\d+))?(?:\/(comments))?$/.exec(url.pathname);
     if (!match) return reply({ message: 'Not Found' }, 404);
     const [, repoName, kind, number, comments] = match;
@@ -101,6 +128,12 @@ function fakeGithub(repos, log) {
     if (!repo) return reply({ message: 'Not Found' }, 404);
     if (kind === 'pulls') return reply([]);
     if (!number) {
+      if (method === 'POST') {
+        const data = JSON.parse(init.body);
+        const number = Math.max(...repo.issues.map(i => i.number)) + 1;
+        const issue = issueJson({ ...data, number, state: 'open' }); repo.issues.push(issue);
+        return reply(issue, 201);
+      }
       const state = url.searchParams.get('state') ?? 'open';
       return reply(repo.issues.filter(issue => state === 'all' || issue.state === state).map(issueJson));
     }
@@ -127,7 +160,7 @@ function fakeGithub(repos, log) {
   };
 }
 
-export async function createHarness({ repos = liveFixtures(), anthropic = null, origin = 'http://localhost:8787' } = {}) {
+export async function createHarness({ repos = liveFixtures(), anthropic = null, origin = 'http://localhost:8787', execution = false } = {}) {
   const db = new DatabaseSync(':memory:');
   db.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
   const sessionKey = b64url(webcrypto.getRandomValues(new Uint8Array(32)));
@@ -143,6 +176,7 @@ export async function createHarness({ repos = liveFixtures(), anthropic = null, 
     GITHUB_APP_CLIENT_SECRET: 'test-secret',
     ALFRED_DECISION_ISSUES: JSON.stringify({ 'deceivers-audit': 17, 'science-mvp': 19, 'mci-freeze': 1, 'songbook-hold': 1 }),
     ...(anthropic ? { ANTHROPIC_API_KEY: 'sk-ant-test-not-a-real-key' } : {}),
+    ...(execution ? { ALFRED_EXECUTOR_SHA: 'a'.repeat(40), ALFRED_EXECUTOR_REF: 'refs/heads/main' } : {}),
     ASSETS: {
       fetch: async request => {
         const path = new URL(request.url).pathname;
@@ -154,9 +188,21 @@ export async function createHarness({ repos = liveFixtures(), anthropic = null, 
   };
 
   const realFetch = globalThis.fetch;
+  const signingKey = execution ? await webcrypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']) : null;
+  const jwk = signingKey ? { ...await webcrypto.subtle.exportKey('jwk', signingKey.publicKey), kid: 'test-key' } : null;
+  const runnerToken = async (overrides = {}) => {
+    const head = b64url(JSON.stringify({ alg: 'RS256', kid: 'test-key' }));
+    const claims = b64url(JSON.stringify({ iss: 'https://token.actions.githubusercontent.com', aud: origin,
+      repository_id: '1395042959', repository_owner_id: String(OWNER_ID),
+      workflow_ref: 'Mancave-Industries/Gameshed/.github/workflows/alfred-execute.yml@refs/heads/main', sha: 'a'.repeat(40),
+      event_name: 'issue_comment', run_id: '12345', run_attempt: '1', exp: Math.floor(Date.now() / 1000) + 300,
+      nbf: Math.floor(Date.now() / 1000) - 30, ...overrides }));
+    return head + '.' + claims + '.' + b64url(await webcrypto.subtle.sign('RSASSA-PKCS1-v1_5', signingKey.privateKey, encoder.encode(head + '.' + claims)));
+  };
   globalThis.fetch = async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.hostname === 'api.github.com') return github(url, init);
+    if (url.hostname === 'token.actions.githubusercontent.com' && execution) return Response.json({ keys: [jwk] });
     if (url.hostname === 'api.anthropic.com' && anthropic) {
       anthropicCalls.push(JSON.parse(init.body));
       return anthropic(JSON.parse(init.body));
@@ -209,7 +255,7 @@ export async function createHarness({ repos = liveFixtures(), anthropic = null, 
   }
 
   return {
-    env, repos, db, githubLog, blocked, anthropicCalls, signIn, request, serve,
+    env, repos, db, githubLog, blocked, anthropicCalls, signIn, request, serve, runnerToken,
     comments: number => repos.Gameshed.comments[number],
     restore: () => { globalThis.fetch = realFetch; },
   };

@@ -92,6 +92,15 @@ async function deploy() {
       'deceivers-audit': 17, 'science-mvp': 19, 'mci-freeze': 1, 'songbook-hold': 1,
     }) },
   };
+  // Activation is opt-in and pins the runner to a reviewed immutable revision.
+  // Ordinary preview publication leaves the existing activation unchanged.
+  if (process.env.ALFRED_EXECUTOR_SHA) {
+    if (!/^[a-f0-9]{40}$/.test(process.env.ALFRED_EXECUTOR_SHA) || process.env.ALFRED_EXECUTOR_REF !== 'refs/heads/main') {
+      throw new Error('Activate only a reviewed default-branch runner revision.');
+    }
+    envVars.ALFRED_EXECUTOR_SHA = { type: 'plain_text', value: process.env.ALFRED_EXECUTOR_SHA };
+    envVars.ALFRED_EXECUTOR_REF = { type: 'plain_text', value: process.env.ALFRED_EXECUTOR_REF };
+  }
   if (!project.deployment_configs?.preview?.env_vars?.ALFRED_SESSION_KEY) {
     const [{ results: [state] }] = await api(databasePath + '/' + database.uuid + '/query', 'POST', {
       sql: 'SELECT EXISTS(SELECT 1 FROM github_app) AS configured, EXISTS(SELECT 1 FROM sessions) AS sessions',

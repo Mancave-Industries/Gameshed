@@ -1,0 +1,60 @@
+name: Alfred approved Claude execution
+# GitHub only delivers issue_comment events to workflows on the default branch.
+# Install by reviewed merge; pushing this feature branch does not activate it.
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run the complete offline approval/execution/verification test (no spend)'
+        required: true
+        default: test-only
+        type: choice
+        options: [test-only]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: alfred-decision-${{ github.event.comment.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test --test-concurrency=1 alfred/test/worker.test.mjs alfred/test/execution.test.mjs
+  execute:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.repository == 'Mancave-Industries/Gameshed' &&
+      github.event.comment.user.id == 287470662 &&
+      startsWith(github.event.comment.body, '<!-- alfred-workflow-event:v1 -->') &&
+      contains(github.event.comment.body, '"type":"choice"') &&
+      !contains(github.event.comment.body, '"option":"defer"')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: Alfred-preview
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Execute only the exact approved bounded task
+        env:
+          ALFRED_ORIGIN: https://review.alfred-control-centre-1395042959.pages.dev
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node alfred/runner/run.mjs

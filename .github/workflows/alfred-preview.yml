@@ -10,6 +10,10 @@ on:
         description: 'Type DEPLOY PREVIEW to publish this branch to the Alfred review deployment'
         required: true
         type: string
+      executor_sha:
+        description: 'Optional reviewed main-branch commit SHA to activate the Claude runner (leave empty to keep current activation)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -35,5 +39,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 34c51add54418c2a9d8c38b9be2420e8
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ALFRED_EXECUTOR_SHA: ${{ inputs.executor_sha }}
+          ALFRED_EXECUTOR_REF: refs/heads/main
           WRANGLER_SEND_METRICS: 'false'
         run: node alfred/deploy-preview.mjs "$RUNNER_TEMP/alfred-cli/node_modules/.bin/wrangler"
