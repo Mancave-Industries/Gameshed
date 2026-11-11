@@ -75,7 +75,7 @@ test('natural language: "go with the practical flow" asks to confirm, then appro
   assert.equal(h.comments(4).length, 0, 'typing alone records nothing');
   await shot(page, '3-confirm');
   await confirm.getByRole('button', { name: 'Approve: Test the practical flow first' }).click();
-  await page.getByText(/Approved “Test the practical flow first”. It’s queued/).waitFor();
+  await page.getByText(/Approved “Test the practical flow first”. It is queued/).waitFor();
   assert.match(h.comments(4).at(-1).body, /"option":"test-osmosis-practical"/);
   await page.locator('#now-list').getByText('Approved · waiting to start').waitFor();
   await shot(page, '4-approved');

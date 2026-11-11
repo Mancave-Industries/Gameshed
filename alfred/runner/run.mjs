@@ -45,8 +45,8 @@ export async function verifyInContainer(checkout, spec, files, output, runner = 
   validateOutput(output, spec);
   if (spec.profile === 'source-review') return;
   const originalCommand = spec.profile === 'alfred-node'
-    ? ['node', '--test', '--test-concurrency=1', 'test/worker.test.mjs', 'test/execution.test.mjs']
-    : ['node', '--test'];
+    ? ['node', '--test', '--test-reporter=tap', '--test-concurrency=1', 'test/worker.test.mjs', 'test/execution.test.mjs']
+    : ['node', '--test', '--test-reporter=tap'];
   const relative = spec.profile === 'alfred-node' ? 'alfred' : '.';
   const temporary = await mkdtemp(join(tmpdir(), 'alfred-check-'));
   try {
@@ -64,10 +64,13 @@ export async function verifyInContainer(checkout, spec, files, output, runner = 
       if (!(await lstat(path)).isFile() || (await readFile(path, 'utf8')) !== f.content) throw new Error('Runner checkout differs from the approved source snapshot.');
     }
     async function check() {
-      await runner('docker', ['run', '--rm', '--network=none', '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
+      const checked = await runner('docker', ['run', '--rm', '--network=none', '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
         '--pids-limit=128', '--memory=1g', '--cpus=2', '--user=65534:65534', '--tmpfs=/tmp:rw,nosuid,nodev,size=128m',
         '--mount', 'type=bind,src=' + clean + ',dst=/source,readonly', '-w', '/source/' + relative,
         'node:24-bookworm-slim', ...originalCommand], { timeout: 120000, maxBuffer: 200000 });
+      if (!/^# tests [1-9][0-9]*$/m.test(checked.stdout) || !/^# pass [1-9][0-9]*$/m.test(checked.stdout) || !/^# fail 0$/m.test(checked.stdout)) {
+        throw new Error('The verifier did not confirm any passing tests.');
+      }
     }
     await check(); // A broken baseline must never be presented as a verified fix.
     for (const f of output.files) {

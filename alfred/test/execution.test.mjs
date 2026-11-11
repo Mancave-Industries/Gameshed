@@ -163,6 +163,7 @@ test('container verifier runs original and changed code, with network and creden
     { result: 'Draft', files: [{ path: 'value.js', content: 'export const value = 2;\n' }] }, async (bin, args, opts) => {
       assert.equal(bin, 'docker'); assert.ok(args.includes('--network=none')); assert.ok(args.includes('--read-only'));
       assert.ok(!args.includes('-e')); assert.ok(opts.timeout > 0); commands.push(args);
+      return { stdout: '# tests 1\n# pass 1\n# fail 0\n' };
     });
   assert.equal(commands.length, 2);
 });
@@ -179,4 +180,6 @@ test('real sandbox accepts a correct change and rejects an actual regression', {
   const files = [{ path: 'value.js', content: 'export const value = 1;\n' }];
   await verifyInContainer(root, SPEC, files, { result: 'Draft', files: [{ path: 'value.js', content: 'export const value = 2;\n' }] });
   await assert.rejects(verifyInContainer(root, SPEC, files, { result: 'Broken', files: [{ path: 'value.js', content: 'export const value = -1;\n' }] }));
+  await rm(join(root, 'test'), { recursive: true });
+  await assert.rejects(verifyInContainer(root, SPEC, files, { result: 'No tests', files: [{ path: 'value.js', content: 'export const value = 2;\n' }] }), /passing tests/);
 });
