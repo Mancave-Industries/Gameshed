@@ -1,11 +1,15 @@
 name: Alfred preview
 
+# Manual only. Pushes, pull requests and merges never deploy Alfred.
+# To publish the review deployment, open Actions → Alfred preview → Run workflow,
+# choose the branch to publish and type DEPLOY PREVIEW to confirm.
 on:
-  push:
-    branches: [feature/alfred-control-centre-20261108]
-    paths:
-      - 'alfred/**'
-      - '.github/workflows/alfred-preview.yml'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DEPLOY PREVIEW to publish this branch to the Alfred review deployment'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,7 +20,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.repository == 'Mancave-Industries/Gameshed'
+    if: github.repository == 'Mancave-Industries/Gameshed' && github.event_name == 'workflow_dispatch' && inputs.confirm == 'DEPLOY PREVIEW'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: Alfred-preview
