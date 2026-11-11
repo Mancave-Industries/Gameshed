@@ -2,135 +2,85 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0e1421">
   <meta name="robots" content="noindex, nofollow">
   <title>Alfred Control Centre</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
 </head>
-<body>
-  <main class="shell">
-    <header class="masthead">
+<body class="workspace-page">
+  <header class="topbar">
+    <div class="identity">
+      <span class="signal" aria-hidden="true"></span>
       <div>
-        <div class="eyebrow"><span class="signal" aria-hidden="true"></span> Mancave Industries</div>
         <h1>Alfred</h1>
-        <p class="subtitle">Control Centre</p>
+        <p id="freshness" role="status">Connecting…</p>
       </div>
-      <div class="account">
-        <span class="badge">Preview</span>
-        <form action="/auth/logout" method="post" id="logout" hidden>
-          <button class="subtle" type="submit">Sign out</button>
-        </form>
-      </div>
-    </header>
+    </div>
+    <div class="topbar-actions">
+      <button id="refresh" class="icon-button" type="button" aria-label="Refresh" hidden>↻</button>
+      <button id="open-more" class="icon-button" type="button" aria-haspopup="dialog" aria-label="History, projects and settings" hidden>☰</button>
+    </div>
+  </header>
 
-    <section id="session-panel" class="session-panel" aria-label="GitHub connection">
-      <p id="session-message" role="status">Checking GitHub connection…</p>
-      <form action="/auth/login" method="post" id="login" hidden>
-        <button class="button primary" type="submit">Sign in with GitHub</button>
-      </form>
-      <button id="retry" class="subtle" type="button" hidden>Retry connection</button>
-      <noscript><p>Enable JavaScript to load the dashboard and record decisions.</p></noscript>
+  <section id="session-panel" class="session-panel" aria-label="Sign in">
+    <p id="session-message" role="status">Checking your GitHub connection…</p>
+    <form action="/auth/login" method="post" id="login" hidden>
+      <button class="button primary" type="submit">Sign in with GitHub</button>
+    </form>
+    <button id="retry" class="button" type="button" hidden>Try again</button>
+    <noscript><p>Turn on JavaScript to talk to Alfred.</p></noscript>
+  </section>
+
+  <main id="workspace" hidden>
+    <section class="now" aria-labelledby="now-heading">
+      <h2 id="now-heading">Happening now</h2>
+      <ul id="now-list"></ul>
     </section>
-
-    <section id="portfolio" aria-labelledby="portfolio-heading" hidden>
-      <div class="portfolio-header">
-        <div>
-          <h2 id="portfolio-heading">Your actions</h2>
-          <p id="freshness" role="status"></p>
-        </div>
-        <button id="refresh" class="subtle" type="button">Refresh</button>
-      </div>
-      <section class="card workstack" aria-labelledby="workflow-heading">
-        <h3 id="workflow-heading">Alfred workflows</h3>
-        <p class="activity">Choose an option here. Alfred picks up approved work in its scheduled review and posts the result back here.</p>
-        <p id="workflow-status" role="status"></p>
-        <div id="workflow-items"></div>
-      </section>
-      <section class="card workstack" aria-labelledby="approval-heading">
-        <h3 id="approval-heading" tabindex="-1">Project approvals</h3>
-        <p id="approval-status" role="status"></p>
-        <form id="pilot-review" class="decision pending" action="/handoff/pilot/review" method="post" hidden>
-          <h4>The Deceivers · Claude release audit</h4>
-          <p class="question">Review the scope before approving one read-only run, capped at £1.</p>
-          <button class="button action-required" type="submit">Review Claude run</button>
-        </form>
-        <div id="pending-decisions"></div>
-      </section>
-      <section id="project-reviews" class="card workstack" aria-labelledby="review-heading" hidden>
-        <h3 id="review-heading">What happened and what’s next</h3>
-        <p class="activity">Reviewed on 9 November 2026. These are the next steps identified in the review.</p>
-        <ul id="review-actions" class="next-actions"></ul>
-      </section>
-      <section class="card workstack ask-alfred" aria-labelledby="ask-heading">
-        <h3 id="ask-heading">Ask Alfred</h3>
-        <p id="ask-help">Get a read-only answer from Claude using the latest dashboard. Each question uses the separate £1 trial budget, with a conservative US$0.75 API ceiling.</p>
-        <form id="ask-form">
-          <label for="ask-question">Your question</label>
-          <textarea id="ask-question" rows="2" required maxlength="800" aria-describedby="ask-help" placeholder="What needs my attention today?"></textarea>
-          <button class="button primary" id="ask-submit" type="submit">Ask Alfred</button>
-        </form>
-        <p id="ask-response" role="status"></p>
-      </section>
-      <section class="card claude-activity" aria-labelledby="claude-heading">
-        <h3 id="claude-heading">Claude activity</h3>
-        <p id="claude-pilot-status" role="status"></p>
-        <p id="claude-rehearsal" role="status"></p>
-        <details id="claude-findings" hidden>
-          <summary class="button">View Claude’s findings</summary>
-          <p id="claude-result"></p>
-        </details>
-        <a id="claude-handoff" class="button" href="/handoff">Open Claude handoff</a>
-      </section>
-      <h2 class="project-heading">Project status</h2>
-      <div class="grid" id="projects"></div>
-      <footer>Decisions are saved to GitHub.</footer>
-    </section>
-
-    <template id="card">
-      <article class="card">
-        <div class="card-header">
-          <div>
-            <div class="eyebrow priority"></div>
-            <h3></h3>
-          </div>
-        </div>
-        <p class="project-status"></p>
-        <dl class="details">
-          <div><dt>Blocker</dt><dd class="blocker"></dd></div>
-          <div><dt>Next</dt><dd class="next"></dd></div>
-        </dl>
-        <div class="work">
-          <h4>Work in progress</h4>
-          <p class="activity"></p>
-          <ul class="tasks"></ul>
-          <details class="technical-sources">
-            <summary>Technical sources</summary>
-            <a class="repo-link">GitHub repository <span aria-hidden="true">↗</span></a>
-            <ul class="references" aria-label="Brief sources"></ul>
-          </details>
-        </div>
-        <section class="decision" aria-label="Project decision">
-          <h3 class="decision-project" hidden></h3>
-          <h4>Decision</h4>
-          <p class="question"></p>
-          <div class="choices">
-            <button type="button" class="button approve" value="YES">YES</button>
-            <button type="button" class="button" value="NO">NO</button>
-            <button type="button" class="button" value="DEFER">DEFER</button>
-          </div>
-          <p class="decision-status" role="status"></p>
-          <div class="decision-actions">
-            <a class="decision-link" hidden>GitHub decision record <span aria-hidden="true">↗</span></a>
-            <button type="button" class="subtle change-decision" hidden>Change decision</button>
-          </div>
-        </section>
-        <details class="decision-history" hidden>
-          <summary>Decision history</summary>
-        </details>
-      </article>
-    </template>
+    <ol id="thread" class="thread" aria-label="Conversation with Alfred"></ol>
   </main>
+
+  <form id="composer" class="composer" hidden>
+    <div class="suggestions" role="group" aria-label="Suggestions">
+      <button type="button" class="chip" data-say="What's next?">What's next?</button>
+      <button type="button" class="chip" data-say="What's happening?">What's happening?</button>
+      <button type="button" class="chip" data-say="Show recent results">Recent results</button>
+    </div>
+    <div class="composer-row">
+      <label for="say" class="visually-hidden">Message Alfred</label>
+      <textarea id="say" rows="1" maxlength="800" placeholder="Talk to Alfred…" enterkeyhint="send" autocomplete="off"></textarea>
+      <button id="send" class="send" type="submit" aria-label="Send">➤</button>
+    </div>
+  </form>
+
+  <dialog id="more" aria-labelledby="more-heading">
+    <div class="sheet">
+      <div class="sheet-header">
+        <h2 id="more-heading">History and projects</h2>
+        <button id="close-more" class="icon-button" type="button" aria-label="Close">✕</button>
+      </div>
+      <section aria-labelledby="history-heading">
+        <h3 id="history-heading">Workflow history</h3>
+        <ul id="history-list" class="sheet-list"></ul>
+      </section>
+      <section aria-labelledby="projects-heading">
+        <h3 id="projects-heading">Projects and earlier decisions</h3>
+        <ul id="project-list" class="sheet-list"></ul>
+      </section>
+      <section aria-labelledby="claude-heading">
+        <h3 id="claude-heading">Claude activity</h3>
+        <p id="claude-status" class="muted"></p>
+        <details id="claude-findings" hidden>
+          <summary>Claude's findings</summary>
+          <p id="claude-result" class="prewrap"></p>
+        </details>
+        <p><a href="/handoff">Open Claude handoff</a></p>
+      </section>
+      <form action="/auth/logout" method="post" class="sign-out">
+        <button class="button" type="submit">Sign out</button>
+      </form>
+    </div>
+  </dialog>
 </body>
 </html>
