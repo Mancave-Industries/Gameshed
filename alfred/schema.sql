@@ -1,0 +1,66 @@
+CREATE TABLE IF NOT EXISTS oauth_attempts (
+    id TEXT PRIMARY KEY,
+    verifier TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    token TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS github_app (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    credentials TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS claude_rehearsals (
+    id TEXT PRIMARY KEY,
+    issue_number INTEGER NOT NULL,
+    revision TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS claude_pilot (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    proposal TEXT NOT NULL,
+    revision TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    started_at INTEGER,
+    result TEXT
+);
+
+CREATE TABLE IF NOT EXISTS chat_grants (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    phase TEXT NOT NULL,
+    challenge TEXT NOT NULL,
+    state TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ask_alfred_budget (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    committed_microusd INTEGER NOT NULL CHECK (committed_microusd >= 0)
+);
+
+INSERT OR IGNORE INTO ask_alfred_budget (id, committed_microusd) VALUES (1, 0);
+
+CREATE TABLE IF NOT EXISTS executions (
+    decision_id INTEGER PRIMARY KEY,
+    issue_number INTEGER NOT NULL,
+    snapshot TEXT NOT NULL,
+    credential TEXT NOT NULL,
+    status TEXT NOT NULL,
+    run_id TEXT,
+    attempt INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER NOT NULL,
+    heartbeat_at INTEGER NOT NULL,
+    result TEXT,
+    output TEXT,
+    published_sha TEXT,
+    next_issue INTEGER
+);

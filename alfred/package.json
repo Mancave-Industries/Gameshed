@@ -1,0 +1,9 @@
+{
+  "name": "alfred-control-centre",
+  "private": true,
+  "type": "module",
+  "description": "Alfred Control Centre. No runtime dependencies; tests use Node's built-in test runner and, for the browser tests, Playwright if it is installed.",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 test/*.test.mjs"
+  }
+}
