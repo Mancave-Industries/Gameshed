@@ -48,3 +48,19 @@ CREATE TABLE IF NOT EXISTS ask_alfred_budget (
 );
 
 INSERT OR IGNORE INTO ask_alfred_budget (id, committed_microusd) VALUES (1, 0);
+
+CREATE TABLE IF NOT EXISTS executions (
+    decision_id INTEGER PRIMARY KEY,
+    issue_number INTEGER NOT NULL,
+    snapshot TEXT NOT NULL,
+    credential TEXT NOT NULL,
+    status TEXT NOT NULL,
+    run_id TEXT,
+    attempt INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER NOT NULL,
+    heartbeat_at INTEGER NOT NULL,
+    result TEXT,
+    output TEXT,
+    published_sha TEXT,
+    next_issue INTEGER
+);

@@ -1,3 +1,5 @@
+import { executor } from './executor.js';
+import { executionSpec } from './execution-policy.js';
 const OWNER = 'Mancave-Industries';
 const OWNER_ID = 287470662;
 const CHOICES = new Set(['YES', 'NO', 'DEFER']);
@@ -501,7 +503,10 @@ async function workflowState(token, proposal) {
     if (event.type === 'started' && ['queued', 'blocked', 'verification_failed'].includes(state.status)) {
       state.status = 'running';
       state.events.push({ type: 'started', at });
-    } else if (['completed', 'blocked'].includes(event.type) && ['running', 'blocked'].includes(state.status) &&
+    } else if (event.type === 'checking' && state.status === 'running') {
+      state.status = 'checking';
+      state.events.push({ type: 'checking', at });
+    } else if (['completed', 'blocked'].includes(event.type) && ['queued', 'running', 'checking', 'blocked'].includes(state.status) &&
       workflowText(event.result)) {
       state.status = event.type;
       state.result = event.result;
@@ -564,7 +569,9 @@ async function verifyWorkflow(request, token, number) {
   return json({ workflow: await workflowState(token, proposal) });
 }
 
-async function chooseWorkflow(request, token, number) {
+const execution = executor({ github, encryptToken, decryptToken, workflowState, workflowProposal, sha256 });
+
+async function chooseWorkflow(request, token, number, env) {
   const input = await request.json().catch(() => null);
   const issue = await github(token, WORKFLOW_REPO + '/' + number);
   const proposal = workflowProposal(issue);
@@ -574,13 +581,29 @@ async function chooseWorkflow(request, token, number) {
   if (option && (input.label !== option.label || input.detail !== option.detail)) {
     return json({ error: 'The option changed. Refresh before choosing.' }, 409);
   }
+  if (option?.execution !== undefined) {
+    const spec = executionSpec(option.execution);
+    if (!spec) return json({ error: 'This task needs a valid repository, revision, file scope and verification plan before it can run.' }, 409);
+    if (!env.ALFRED_EXECUTOR_SHA || !env.ALFRED_EXECUTOR_REF) return json({ error: 'Automatic Claude execution is awaiting activation. No money has been spent.' }, 409);
+    if (JSON.stringify(input.execution) !== JSON.stringify(option.execution) || input.confirmCostMicrousd !== spec.maxMicrousd) {
+      return json({ error: 'Review the exact task and its US dollar spending ceiling before approving.' }, 409);
+    }
+    if (!spec.maxMicrousd) return json({ error: 'Claude execution requires an explicit positive spending ceiling. Use the no-cost test instead.' }, 409);
+  }
   const current = await workflowState(token, proposal);
-  if (current.choice === option?.id || (current.status === 'deferred' && !option)) return json({ workflow: current });
+  if (current.choice === option?.id || (current.status === 'deferred' && !option)) {
+    if (option?.execution && current.status === 'queued') await execution.queue(env, token, issue, current, option);
+    return json({ workflow: current });
+  }
   if (!['decision', 'deferred'].includes(current.status)) return json({ error: 'A decision is already recorded. Refresh to see it.' }, 409);
   await github(token, WORKFLOW_REPO + '/' + number + '/comments', 'POST', {
     body: WORKFLOW_EVENT + JSON.stringify({ type: 'choice', option: input.option, label: option?.label, detail: option?.detail }),
   });
-  return json({ workflow: await workflowState(token, proposal) });
+  const recorded = await workflowState(token, proposal);
+  // Use the first exact GitHub choice, even if simultaneous clicks chose differently.
+  const approved = proposal.options.find(o => o.id === recorded.choice);
+  if (approved?.execution) await execution.queue(env, token, issue, recorded, approved);
+  return json({ workflow: recorded });
 }
 
 async function dashboard(token, env) {
@@ -1092,6 +1115,10 @@ async function chatConnection(request, env, url) {
 async function route(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname;
+  if (['/api/executor/claim', '/api/executor/finish', '/api/executor/source'].includes(path) && request.method === 'POST') {
+    if (!configured(env) || url.origin !== env.ALFRED_ORIGIN) return json({ error: 'Runner unavailable.' }, 503);
+    return execution.route(request, env);
+  }
   if (ASSETS.has(path) && (request.method === 'GET' || request.method === 'HEAD')) {
     return env.ASSETS.fetch(request);
   }
@@ -1139,7 +1166,7 @@ async function route(request, env, ctx) {
   const workflowChoice = /^\/api\/workflows\/([1-9][0-9]{0,8})\/choice$/.exec(path);
   if (workflowChoice && isWrite) {
     const token = await session(request, env);
-    return token ? chooseWorkflow(request, token, Number(workflowChoice[1])) : json({ error: 'Sign in to choose an option.' }, 401);
+    return token ? chooseWorkflow(request, token, Number(workflowChoice[1]), env) : json({ error: 'Sign in to choose an option.' }, 401);
   }
   const workflowVerify = /^\/api\/workflows\/([1-9][0-9]{0,8})\/verify$/.exec(path);
   if (workflowVerify && isWrite) {
@@ -1148,6 +1175,7 @@ async function route(request, env, ctx) {
   }
   if (path === '/api/workspace' && isRead) {
     const token = await session(request, env);
+    if (token) await execution.monitor(env, token);
     return token ? workspace(token, env) : json({ error: 'Sign in with GitHub to talk to Alfred.' }, 401);
   }
   if (path === '/api/dashboard' && isRead) {

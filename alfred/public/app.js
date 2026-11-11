@@ -30,6 +30,7 @@ const STATUS = {
   deferred: 'Deferred',
   queued: 'Approved · waiting to start',
   running: 'In progress',
+  checking: 'Checking the result',
   blocked: 'Blocked',
   completed: 'Done · needs checking',
   verifying: 'Being checked',
@@ -38,7 +39,7 @@ const STATUS = {
 };
 const STAGES = ['Recommend', 'Approve', 'Execute', 'Verify', 'Report'];
 const STAGE_OF = {
-  decision: 1, deferred: 1, queued: 2, running: 2, blocked: 2,
+  decision: 1, deferred: 1, queued: 2, running: 2, blocked: 2, checking: 3,
   completed: 3, verifying: 3, verification_failed: 3, verified: 4,
 };
 const timeFormat = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' });
@@ -123,7 +124,7 @@ function pendingChecks() {
 }
 
 function inProgress() {
-  return openWorkflows().filter(item => ['queued', 'running', 'blocked', 'verification_failed'].includes(item.status));
+  return openWorkflows().filter(item => ['queued', 'running', 'checking', 'blocked', 'verification_failed'].includes(item.status));
 }
 
 function attention() {
@@ -173,14 +174,15 @@ function decisionCard(workflow, preselect) {
       type: 'button',
       class: isDefer ? 'button subtle-button' : option.recommended ? 'button approve' : 'button',
       'aria-describedby': option.detail ? key + '-' + option.id : null,
-      text: isDefer ? 'Decide later' : 'Approve: ' + option.label,
+      text: isDefer ? 'Decide later' : 'Approve: ' + option.label + (option.execution ? ' · US$' + (option.execution.maxMicrousd / 1000000).toFixed(2) + ' max' : ''),
     });
     if (preselect && preselect === option.id) button.classList.add('highlight');
     button.addEventListener('click', () => choose(workflow, option, status, options));
     options.append(el('div', { class: 'option' },
       option.recommended ? el('span', { class: 'tag', text: 'Recommended' }) : null,
       button,
-      option.detail ? el('p', { class: 'detail', id: key + '-' + option.id, text: option.detail.replace(/^Recommended\.\s*/, '') }) : null));
+      option.detail ? el('p', { class: 'detail', id: key + '-' + option.id, text: option.detail.replace(/^Recommended\.\s*/, '') }) : null,
+      option.execution ? el('p', { class: 'detail', text: 'Claude will work on ' + option.execution.repo + ', run the named checks and return a review branch. This approval permits one API request up to the displayed US dollar ceiling. It does not permit merge or deployment.' }) : null));
   }
   return cardShell(key, workflow.project + ' · Decision', workflow.title,
     stepper(workflow.status),
@@ -399,7 +401,8 @@ async function choose(workflow, option, status, controls) {
   status.textContent = 'Recording your choice…';
   try {
     const saved = await post('/api/workflows/' + workflow.number + '/choice',
-      { option: option.id, label: option.label, detail: option.detail });
+      { option: option.id, label: option.label, detail: option.detail,
+        ...(option.execution ? { execution: option.execution, confirmCostMicrousd: option.execution.maxMicrousd } : {}) });
     if (!saved.workflow) throw new Error('Refresh to check whether your choice was saved.');
     replaceWorkflow(saved.workflow);
     const accepted = option.id === 'defer' ? saved.workflow.status === 'deferred' : saved.workflow.choice === option.id;
@@ -411,7 +414,9 @@ async function choose(workflow, option, status, controls) {
       message('alfred', 'Deferred “' + workflow.title + '”. It stays open; just tell me when you want to pick it up.',
         next ? 'Next up: ' + nextLabel(next) + '.' : 'Nothing else needs you right now.');
     } else {
-      message('alfred', 'Approved “' + option.label + '”. It’s queued — Alfred’s scheduled run picks up approved work, usually within the hour, and reports back here.',
+      message('alfred', 'Approved “' + option.label + '”. ' + (option.execution
+        ? 'The runner will start automatically and report its checks here. No merge or deployment is authorised.'
+        : 'It is queued for the existing reviewer. This option does not authorise paid Claude execution.'),
         next ? 'Next up: ' + nextLabel(next) + '.' : 'Nothing else needs you right now. I’ll show the next decision as soon as it’s ready.');
     }
   } catch (error) {

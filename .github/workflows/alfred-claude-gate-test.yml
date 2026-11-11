@@ -1,0 +1,50 @@
+name: Alfred Claude dispatch — no-cost gate test
+# This workflow validates the existing approval handoff without starting Claude.
+# It must not be mistaken for the final paid execution integration.
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Approved Gameshed task issue number'
+        required: true
+        type: number
+      confirm:
+        description: 'Type TEST ONLY to validate without running Claude'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: alfred-claude-gate-test
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.repository == 'Mancave-Industries/Gameshed' && inputs.confirm == 'TEST ONLY'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate issue and scope (no Claude API)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TASK_NUMBER: ${{ inputs.issue_number }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TASK_NUMBER" =~ ^[0-9]+$ ]] || exit 1
+          issue=$(gh api "repos/$GH_REPO/issues/$TASK_NUMBER")
+          state=$(jq -r '.state' <<< "$issue")
+          is_pr=$(jq -r 'has("pull_request")' <<< "$issue")
+          [[ "$state" == "open" && "$is_pr" == "false" ]] || { echo 'Task is not an open issue'; exit 1; }
+          title=$(jq -r '.title' <<< "$issue")
+          echo "Validated open task #$TASK_NUMBER: $title"
+          echo "NO CLAUDE INVOCATION. NO SPEND. NO CODE CHANGES."
+          {
+            echo "### Alfred Claude handoff — dry run"
+            echo "Validated open task #$TASK_NUMBER: $title"
+            echo "This is a free validation only; Claude was not started."
+          } >> "$GITHUB_STEP_SUMMARY"

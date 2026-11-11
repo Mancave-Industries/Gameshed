@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 import { createHarness } from './harness.mjs';
+import { liveFixtures } from './harness.mjs';
+import { run } from '../runner/run.mjs';
 
 let playwright = null;
 try { playwright = createRequire(import.meta.url)('playwright'); } catch {}
@@ -16,8 +18,9 @@ async function open(t, options = {}) {
   const origin = 'http://localhost:' + port++;
   const h = await createHarness({ origin, ...options });
   const server = await h.serve();
-  const browser = await playwright.chromium.launch();
-  t.after(async () => { await browser.close(); server.close(); h.restore(); });
+  t.after(async () => { server.close(); h.restore(); });
+  const browser = await playwright.chromium.launch({ executablePath: process.env.ALFRED_CHROMIUM || undefined, args: ['--no-sandbox'] });
+  t.after(async () => { await browser.close(); });
   const session = await h.signIn();
   // Browsers refuse a Secure __Host- cookie over plain local HTTP, so the test sends
   // the session cookie as a header instead.
@@ -72,7 +75,7 @@ test('natural language: "go with the practical flow" asks to confirm, then appro
   assert.equal(h.comments(4).length, 0, 'typing alone records nothing');
   await shot(page, '3-confirm');
   await confirm.getByRole('button', { name: 'Approve: Test the practical flow first' }).click();
-  await page.getByText(/Approved “Test the practical flow first”. It’s queued/).waitFor();
+  await page.getByText(/Approved “Test the practical flow first”. It is queued/).waitFor();
   assert.match(h.comments(4).at(-1).body, /"option":"test-osmosis-practical"/);
   await page.locator('#now-list').getByText('Approved · waiting to start').waitFor();
   await shot(page, '4-approved');
@@ -126,10 +129,40 @@ test('signed-out visitors see the sign-in button', { skip: !playwright }, async 
   const origin = 'http://localhost:' + port++;
   const h = await createHarness({ origin });
   const server = await h.serve();
-  const browser = await playwright.chromium.launch();
-  t.after(async () => { await browser.close(); server.close(); h.restore(); });
+  t.after(async () => { server.close(); h.restore(); });
+  const browser = await playwright.chromium.launch({ executablePath: process.env.ALFRED_CHROMIUM || undefined, args: ['--no-sandbox'] });
+  t.after(async () => { await browser.close(); });
   const page = await browser.newPage();
   await page.goto(origin + '/');
   await page.getByRole('button', { name: 'Sign in with GitHub' }).waitFor();
   assert.equal(await page.locator('#workspace').isHidden(), true);
+});
+
+test('mobile automatic loop: show cost → approve → runner → checked result and next decision', { skip: !playwright }, async t => {
+  const repos = liveFixtures();
+  // Settle the earlier review, so the new runnable task leads the brief.
+  repos.Gameshed.comments[3].push({ id: 6900000000, body: '<!-- alfred-workflow-event:v1 -->\n' + JSON.stringify({ type: 'verified', decisionId: 6772342268, by: 'owner' }) });
+  repos.Gameshed.sources = { 'README.md': '# Synthetic source\n' };
+  const marker = '<!-- alfred-workflow:v1 -->\n';
+  const p = JSON.parse(repos.Gameshed.issues[2].body.slice(marker.length));
+  p.options[0].execution = { repo: 'Gameshed', sha: 'b'.repeat(40), paths: ['README.md'], profile: 'source-review', maxMicrousd: 200000 };
+  repos.Gameshed.issues[2].body = marker + JSON.stringify(p);
+  const { h, page } = await open(t, { repos, execution: true });
+  await page.getByRole('button', { name: 'Approve: Tighten Osmosis wording first · US$0.20 max', exact: true }).click();
+  await page.getByText(/The runner will start automatically/).waitFor();
+  const decisionId = h.comments(4)[0].id;
+  const api = async (path, body) => {
+    const r = await h.request('/api/executor' + path, { method: 'POST', body, headers: { Authorization: 'Bearer ' + await h.runnerToken() } });
+    assert.equal(r.status, 200, r.text); return r.json;
+  };
+  const nextDecision = { title: 'Choose the next synthetic review', summary: 'The source check is complete; accuracy remains a human check.', options: [
+    { id: 'check', label: 'Check the result', detail: 'Recommended. Read the result before another task.' },
+    { id: 'wait', label: 'Wait for more evidence', detail: 'Keep the result available and make no release changes.' }] };
+  await run({ decisionId, api, apiKey: 'fake', provider: async url => url.endsWith('/count_tokens')
+    ? Response.json({ input_tokens: 1000 }) : Response.json({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ result: 'The synthetic source review finished. Factual accuracy remains unverified.', files: [], nextDecision }) }] }) });
+  await page.reload();
+  await page.getByRole('heading', { name: nextDecision.title }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Approve: Tighten Osmosis wording first · US$0.20 max', exact: true }).count(), 0);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await shot(page, '8-automatic-loop');
 });

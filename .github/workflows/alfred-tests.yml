@@ -1,0 +1,27 @@
+name: Verify Alfred execution loop (no spend)
+on:
+  pull_request:
+    paths: ['alfred/**', '.github/workflows/alfred-*.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  execution-loop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install test browser outside the source tree
+        run: |
+          npm install --prefix "$RUNNER_TEMP/alfred-browser" --no-audit --no-fund playwright@1.62.1
+          "$RUNNER_TEMP/alfred-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Approval, executor, independent sandbox checks and next decision
+        env:
+          ALFRED_REQUIRE_DOCKER: '1'
+          NODE_PATH: ${{ runner.temp }}/alfred-browser/node_modules
+        run: node --test --test-concurrency=1 alfred/test/*.test.mjs
