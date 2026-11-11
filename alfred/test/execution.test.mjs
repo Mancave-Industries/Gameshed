@@ -183,3 +183,12 @@ test('real sandbox accepts a correct change and rejects an actual regression', {
   await rm(join(root, 'test'), { recursive: true });
   await assert.rejects(verifyInContainer(root, SPEC, files, { result: 'No tests', files: [{ path: 'value.js', content: 'export const value = 2;\n' }] }), /passing tests/);
 });
+
+
+test('runner rejection reports a safe diagnostic without echoing a credential', async t => {
+  const { h } = await setup(t);
+  const r = await h.request('/api/executor/claim', { method: 'POST', body: { decisionId: 1 }, headers: { Authorization: 'Bearer secret-do-not-log' } });
+  assert.equal(r.status, 403);
+  assert.equal(r.json.code, 'identity-invalid');
+  assert(!JSON.stringify(r.json).includes('secret-do-not-log'));
+});

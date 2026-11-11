@@ -200,8 +200,10 @@ export function executor(helpers) {
     }
   }
   async function route(request, env) {
+    let diagnostic = 'identity';
     try {
       const claims = await runnerIdentity(request, env);
+      diagnostic = 'request';
       const input = await request.json();
       if (JSON.stringify(input).length > 150000) return response({ error: 'Runner result exceeds the limit.' }, 413);
       if (new URL(request.url).pathname.endsWith('/source')) {
@@ -220,8 +222,24 @@ export function executor(helpers) {
         if (!downloaded.ok) throw new Error('Source archive unavailable.');
         return new Response(downloaded.body, { headers: { 'Content-Type': 'application/gzip', 'Cache-Control': 'no-store' } });
       }
+      diagnostic = new URL(request.url).pathname.endsWith('/claim') ? 'claim' : 'finish';
       return await (new URL(request.url).pathname.endsWith('/claim') ? claim(env, claims, input) : finish(env, claims, input));
-    } catch { return response({ error: 'Runner request could not be verified. No automatic retry is authorised.' }, 403); }
+    } catch (error) {
+      // Only locally authored messages are public; never relay provider errors.
+      const known = new Map([
+        ['Runner activation is pending.', 'activation-pending'],
+        ['Invalid runner identity.', 'identity-invalid'],
+        ['Invalid runner signature.', 'signature-invalid'],
+        ['GitHub identity verification is unavailable.', 'identity-service-unavailable'],
+        ['Unknown runner signing key.', 'signing-key-unknown'],
+        ['Runner scope or revision does not match activation.', 'activation-mismatch'],
+        ['GitHub run evidence does not match.', 'run-mismatch'],
+        ['The approved issue is no longer open.', 'issue-closed'],
+        ['Approved source file is missing, oversized or not a regular text file.', 'source-file-invalid'],
+        ['Source may contain a credential; remove it before running.', 'source-credential-detected'],
+      ]);
+      return response({ error: 'Runner request could not be verified. No automatic retry is authorised.', code: known.get(error?.message) ?? diagnostic + '-failed' }, 403);
+    }
   }
   return { queue, route, monitor, source, claim, finish };
 }

@@ -150,7 +150,13 @@ async function main() {
   const api = async (path, input) => {
     const r = await fetch(origin + '/api/executor' + path, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(25000),
       headers: { Authorization: 'Bearer ' + await identity(), 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
-    if (!r.ok) throw new Error('Alfred could not confirm runner phase ' + path + ' (HTTP ' + r.status + ').');
+    if (!r.ok) {
+      const failure = await r.json().catch(() => ({}));
+      const code = typeof failure.code === 'string' && /^[a-z-]{1,64}$/.test(failure.code) ? failure.code : 'request-rejected';
+      // Public diagnostics contain no response body, credentials or source.
+      console.error('Alfred phase ' + path + ': HTTP ' + r.status + ', code ' + code + '.');
+      throw new Error('Alfred could not confirm runner phase ' + path + '.');
+    }
     return path === '/source' ? Buffer.from(await r.arrayBuffer()) : r.json();
   };
   const checkout = resolve('task-source');
