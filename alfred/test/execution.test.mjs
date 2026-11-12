@@ -311,3 +311,67 @@ test('signing-key fetch uses Worker-supported manual redirects and rejects redir
     assert.deepEqual(h.anthropicCalls, []);
   } finally { globalThis.fetch = realFetch; }
 });
+
+
+
+test('stale queue credential uses a valid owner session for read-only diagnosis without reviving expired work', async t => {
+  const { h, approve, api } = await setup(t);
+  const id = (await approve()).json.workflow.decisionId;
+  h.db.prepare('UPDATE executions SET status = ?, expires_at = ? WHERE decision_id = ?').run('blocked', 1, id);
+  h.repos.Gameshed.authResponses = { ghu_testtoken: { status: 401 } };
+  await h.signIn('ghu_freshowner');
+  h.repos.Gameshed.runEvent = 'workflow_dispatch';
+  const before = h.db.prepare('SELECT * FROM executions').all();
+  const comments = JSON.stringify(h.comments(4));
+  const result = await api('/probe', { decisionId: id }, { event_name: 'workflow_dispatch' });
+  assert.equal(result.status, 'diagnosed');
+  assert.equal(result.expired, true);
+  assert.equal(result.queueStatus, 'blocked');
+  assert.deepEqual(h.db.prepare('SELECT * FROM executions').all(), before);
+  assert.equal(JSON.stringify(h.comments(4)), comments);
+  assert.deepEqual(h.anthropicCalls, []);
+  await assert.rejects(api('/claim', { decisionId: id }), /consumed/);
+});
+
+test('queued work can claim with a fresh owner session but still rejects altered approval scope', async t => {
+  const { h, approve, api } = await setup(t);
+  const id = (await approve()).json.workflow.decisionId;
+  h.repos.Gameshed.authResponses = { ghu_testtoken: { status: 401 } };
+  await h.signIn('ghu_freshowner');
+  h.repos.Gameshed.issues[2].body += ' changed';
+  await assert.rejects(api('/claim', { decisionId: id }));
+  h.repos.Gameshed.issues[2].body = h.repos.Gameshed.issues[2].body.slice(0, -8);
+  const claim = await api('/claim', { decisionId: id });
+  assert.equal(claim.decisionId, id);
+  assert.equal(h.comments(4).filter(c => c.body.includes('"type":"started"')).length, 1);
+  assert.deepEqual(h.anthropicCalls, []);
+});
+
+test('expired sessions cannot repair credentials and original approval expiry still prevents claim', async t => {
+  const { h, approve, api } = await setup(t);
+  const id = (await approve()).json.workflow.decisionId;
+  h.repos.Gameshed.authResponses = { ghu_testtoken: { status: 401 } };
+  await h.signIn('ghu_freshowner');
+  h.db.prepare('UPDATE sessions SET expires_at = 1').run();
+  h.repos.Gameshed.runEvent = 'workflow_dispatch';
+  const result = await h.request('/api/executor/probe', { method: 'POST', body: { decisionId: id }, headers: { Authorization: 'Bearer ' + await h.runnerToken({ event_name: 'workflow_dispatch' }) } });
+  assert.equal(result.json.code, 'github-sign-in-required');
+  await h.signIn('ghu_freshowner');
+  h.db.prepare('UPDATE executions SET expires_at = 1').run();
+  await assert.rejects(api('/claim', { decisionId: id }), /expired/);
+  assert.equal(h.comments(4).length, 1);
+  assert.deepEqual(h.anthropicCalls, []);
+});
+
+test('wrong owner and permission denial fail closed without credential fallback', async t => {
+  for (const denied of [{ status: 403 }, { status: 200, user: { id: 123, login: 'other' } }]) {
+    const { h, approve, api } = await setup(t);
+    const id = (await approve()).json.workflow.decisionId;
+    h.repos.Gameshed.authResponses = { ghu_testtoken: denied };
+    await h.signIn('ghu_freshowner');
+    await assert.rejects(api('/claim', { decisionId: id }));
+    assert.equal(h.comments(4).length, 1);
+    assert.deepEqual(h.anthropicCalls, []);
+    h.restore();
+  }
+});

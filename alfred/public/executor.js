@@ -57,6 +57,30 @@ export async function runnerIdentity(request, env) {
 export function executor(helpers) {
   const { github, encryptToken, decryptToken, workflowState, workflowProposal, sha256 } = helpers;
   const db = env => env.ALFRED_DB;
+  // A queue snapshot can outlive its OAuth access token. Reuse only an
+  // existing, unexpired owner session; never refresh or extend a spending grant.
+  // This is read-only, including when called by the startup probe.
+  async function executionToken(env, row) {
+    const saved = await decryptToken(env, row.credential, 'execution:' + row.decision_id);
+    async function owner(token) {
+      const user = await github(token, '/user');
+      if (user.id !== OWNER_ID || user.login !== OWNER) throw new Error('Execution credential owner mismatch.');
+      return token;
+    }
+    try { return await owner(saved); } catch (error) {
+      if (error.status !== 401) throw error;
+    }
+    const sessions = (await db(env).prepare('SELECT id, token FROM sessions WHERE expires_at > ? ORDER BY expires_at DESC LIMIT 10')
+      .bind(Date.now()).all()).results;
+    for (const session of sessions) {
+      const token = await decryptToken(env, session.token, session.id);
+      if (token === saved) continue;
+      try { return await owner(token); } catch (error) {
+        if (error.status !== 401) throw error;
+      }
+    }
+    throw Object.assign(new Error('GitHub sign-in expired. Sign in to Alfred again; the original approval and spending expiry remain unchanged.'), { code: 'github-sign-in-required' });
+  }
   async function event(token, number, value) {
     const body = MARKER + JSON.stringify(value);
     const comments = await github(token, ROOT + '/' + number + '/comments?per_page=100');
@@ -108,7 +132,7 @@ export function executor(helpers) {
     if (!row) return response({ error: 'The approval has not reached the queue yet.' }, 409);
     if (row.run_id || row.status !== 'queued') return response({ error: 'This approval has already been consumed.' }, 409);
     if (row.expires_at < Date.now()) return response({ error: 'Approval expired. Sign in and approve a fresh proposal.' }, 409);
-    const token = await decryptToken(env, row.credential, 'execution:' + id);
+    const token = await executionToken(env, row);
     const snapshot = JSON.parse(row.snapshot);
     const { issue, state } = await current(token, row.issue_number);
     if (issue.body !== snapshot.body || state.decisionId !== id || state.choice !== snapshot.option || state.status !== 'queued') return response({ error: 'Approval scope changed or work was already started.' }, 409);
@@ -132,7 +156,7 @@ export function executor(helpers) {
       const row = await db(env).prepare('SELECT * FROM executions WHERE decision_id = ?').bind(input.decisionId).first();
       if (!row) return response({ code: 'queue-missing' }, 409);
       phase = 'credential';
-      const token = await decryptToken(env, row.credential, 'execution:' + input.decisionId);
+      const token = await executionToken(env, row);
       const snapshot = JSON.parse(row.snapshot);
       phase = 'approval';
       const { issue, state } = await current(token, row.issue_number);
@@ -149,6 +173,7 @@ export function executor(helpers) {
       return response({ status: 'diagnosed', queueStatus: row.status, expired: row.expires_at < Date.now(),
         alreadyClaimed: Boolean(row.run_id), sourceFiles: files.length, inferenceStarted: false });
     } catch (error) {
+      if (error?.code === 'github-sign-in-required') return response({ code: 'github-sign-in-required' }, 403);
       const status = [401, 403, 404].includes(error?.status) ? '-http-' + error.status : '-failed';
       return response({ code: 'probe-' + phase + status }, 403);
     }
@@ -193,7 +218,7 @@ export function executor(helpers) {
     if (!row || row.run_id !== claims.run_id) return response({ error: 'Runner does not own this decision.' }, 403);
     if (row.status === 'verified') return response({ status: 'verified', nextIssue: row.next_issue });
     if (!['running', 'verifying'].includes(row.status)) return response({ error: 'Run is no longer active.' }, 409);
-    const token = await decryptToken(env, row.credential, 'execution:' + row.decision_id);
+    const token = await executionToken(env, row);
     if (input.phase === 'heartbeat') {
       await db(env).prepare('UPDATE executions SET heartbeat_at = ? WHERE decision_id = ?').bind(Date.now(), row.decision_id).run();
       return response({ status: row.status });
@@ -258,7 +283,7 @@ export function executor(helpers) {
         const row = await db(env).prepare('SELECT * FROM executions WHERE decision_id = ?').bind(input.decisionId).first();
         if (!row || row.run_id !== claims.run_id || row.status !== 'running') return response({ error: 'No active source grant.' }, 403);
         const { spec } = JSON.parse(row.snapshot);
-        const token = await decryptToken(env, row.credential, 'execution:' + row.decision_id);
+        const token = await executionToken(env, row);
         const archive = await fetch('https://api.github.com/repos/' + OWNER + '/' + spec.repo + '/tarball/' + spec.sha, {
           redirect: 'manual', signal: AbortSignal.timeout(15000),
           headers: { Authorization: 'Bearer ' + token, 'User-Agent': 'Alfred-Control-Centre', Accept: 'application/vnd.github+json' },
@@ -276,6 +301,8 @@ export function executor(helpers) {
       // Only locally authored messages are public; never relay provider errors.
       const known = new Map([
         ['Runner activation is pending.', 'activation-pending'],
+        ['GitHub sign-in expired. Sign in to Alfred again; the original approval and spending expiry remain unchanged.', 'github-sign-in-required'],
+        ['Execution credential owner mismatch.', 'credential-owner-mismatch'],
         ['Invalid runner identity.', 'identity-invalid'],
         ['Invalid runner signature.', 'signature-invalid'],
         ['GitHub identity verification is unavailable.', 'identity-service-unavailable'],
@@ -295,3 +322,4 @@ export function executor(helpers) {
   }
   return { queue, route, monitor, source, claim, finish };
 }
+
