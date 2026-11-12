@@ -18,15 +18,29 @@ export async function runnerIdentity(request, env) {
   if (token.length > 16000) throw new Error('Invalid runner identity.');
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('Invalid runner identity.');
-  const header = JSON.parse(new TextDecoder().decode(decode(parts[0])));
-  const claims = JSON.parse(new TextDecoder().decode(decode(parts[1])));
-  if (header.alg !== 'RS256' || typeof header.kid !== 'string') throw new Error('Invalid runner signature.');
-  const jwks = await fetch('https://token.actions.githubusercontent.com/.well-known/jwks', { redirect: 'error', signal: AbortSignal.timeout(8000) });
+  // Errors from native crypto/fetch must never expose token or provider text.
+  const step = async (message, operation) => {
+    try { return await operation(); } catch { throw new Error(message); }
+  };
+  const [header, claims] = await step('Invalid runner identity.', () =>
+    [JSON.parse(new TextDecoder().decode(decode(parts[0]))), JSON.parse(new TextDecoder().decode(decode(parts[1]))) ]);
+  if (!header || !claims || typeof claims !== 'object' || Array.isArray(claims) ||
+      header.alg !== 'RS256' || typeof header.kid !== 'string') throw new Error('Invalid runner signature.');
+  const jwks = await step('Runner signing-key request failed.', () =>
+    fetch('https://token.actions.githubusercontent.com/.well-known/jwks', { redirect: 'error', signal: AbortSignal.timeout(8000) }));
   if (!jwks.ok) throw new Error('GitHub identity verification is unavailable.');
-  const jwk = (await jwks.json()).keys.find(k => k.kid === header.kid && k.kty === 'RSA');
+  const keys = await step('Runner signing-key response is invalid.', async () => {
+    const body = await jwks.json();
+    if (!Array.isArray(body?.keys)) throw new Error();
+    return body.keys;
+  });
+  const jwk = keys.find(k => k?.kid === header.kid && k.kty === 'RSA');
   if (!jwk) throw new Error('Unknown runner signing key.');
-  const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
-  if (!await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, decode(parts[2]), enc.encode(parts[0] + '.' + parts[1]))) throw new Error('Invalid runner signature.');
+  const key = await step('Runner signing-key import failed.', () =>
+    crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']));
+  const valid = await step('Runner signature verification failed.', () =>
+    crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, decode(parts[2]), enc.encode(parts[0] + '.' + parts[1])));
+  if (!valid) throw new Error('Invalid runner signature.');
   const now = Date.now() / 1000;
   const workflow = OWNER + '/Gameshed/.github/workflows/alfred-execute.yml@' + env.ALFRED_EXECUTOR_REF;
   if (claims.iss !== 'https://token.actions.githubusercontent.com' || claims.aud !== env.ALFRED_ORIGIN ||
@@ -264,6 +278,10 @@ export function executor(helpers) {
         ['Invalid runner signature.', 'signature-invalid'],
         ['GitHub identity verification is unavailable.', 'identity-service-unavailable'],
         ['Unknown runner signing key.', 'signing-key-unknown'],
+        ['Runner signing-key request failed.', 'signing-key-fetch-failed'],
+        ['Runner signing-key response is invalid.', 'signing-key-response-invalid'],
+        ['Runner signing-key import failed.', 'signing-key-import-failed'],
+        ['Runner signature verification failed.', 'signature-verification-failed'],
         ['Runner scope or revision does not match activation.', 'activation-mismatch'],
         ['GitHub run evidence does not match.', 'run-mismatch'],
         ['The approved issue is no longer open.', 'issue-closed'],
