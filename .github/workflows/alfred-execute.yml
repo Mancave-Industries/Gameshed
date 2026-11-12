@@ -11,7 +11,11 @@ on:
         required: true
         default: test-only
         type: choice
-        options: [test-only]
+        options: [test-only, startup-probe]
+      decision_id:
+        description: 'Existing numeric choice comment ID for the read-only startup probe'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -23,7 +27,7 @@ concurrency:
 
 jobs:
   test:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'test-only'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -34,6 +38,23 @@ jobs:
         with:
           node-version: '24'
       - run: node --test --test-concurrency=1 alfred/test/worker.test.mjs alfred/test/execution.test.mjs
+  startup-probe:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'startup-probe'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    environment: Alfred-preview
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Read-only startup probe (no model credential or inference)
+        env:
+          ALFRED_ORIGIN: https://review.alfred-control-centre-1395042959.pages.dev
+        run: node alfred/runner/run.mjs
   execute:
     if: >-
       github.event_name == 'issue_comment' &&

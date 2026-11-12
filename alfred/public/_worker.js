@@ -1115,7 +1115,7 @@ async function chatConnection(request, env, url) {
 async function route(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname;
-  if (['/api/executor/claim', '/api/executor/finish', '/api/executor/source'].includes(path) && request.method === 'POST') {
+  if (['/api/executor/claim', '/api/executor/finish', '/api/executor/source', '/api/executor/probe'].includes(path) && request.method === 'POST') {
     if (!configured(env) || url.origin !== env.ALFRED_ORIGIN) return json({ error: 'Runner unavailable.' }, 503);
     return execution.route(request, env);
   }

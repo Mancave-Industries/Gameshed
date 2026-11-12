@@ -97,7 +97,7 @@ function fakeGithub(repos, log) {
     log.push(method + ' ' + url.pathname + url.search);
     if (url.pathname === '/user') return reply({ ...OWNER });
     const runMatch = /^\/repos\/Mancave-Industries\/Gameshed\/actions\/runs\/(\d+)$/.exec(url.pathname);
-    if (runMatch) return reply({ id: Number(runMatch[1]), head_sha: 'a'.repeat(40), path: '.github/workflows/alfred-execute.yml', event: 'issue_comment' });
+    if (runMatch) return reply({ id: Number(runMatch[1]), head_sha: 'a'.repeat(40), path: '.github/workflows/alfred-execute.yml', event: repos.Gameshed.runEvent ?? 'issue_comment' }, repos.Gameshed.runStatus ?? 200);
     const git = /^\/repos\/Mancave-Industries\/([^/]+)\/git\/(.+)$/.exec(url.pathname);
     if (git) {
       const [, repoName, path] = git;

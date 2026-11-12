@@ -62,6 +62,17 @@ acceptance. The signed runner reports only the checks actually executed.
 
 ## Recovery
 
+The manual execution workflow also has a `startup-probe` mode. Supply an existing
+numeric choice comment ID as `decision_id`. Its separate job receives no Anthropic
+key. After normal pinned OIDC validation, it checks the saved credential, exact
+approval, Actions read access and approved source. It reports only a phase code
+or queue status, expiry and file count. It never claims or revives an approval,
+writes events, returns source/credentials or calls a model. It can inspect an
+expired blocked row without making that row runnable. Install the reviewed runner
+revision on main and publish the matching preview activation before using it;
+this needs the owner's merge/preview approval. Successful diagnostics are not
+evidence that Claude execution succeeded and do not authorise a paid retry.
+
 Competing runner claims and action reruns cannot consume a decision twice. Provider
 timeouts are never retried. Result delivery can retry without calling Claude again;
 deterministic review branches and idempotent status events prevent duplicate output.
