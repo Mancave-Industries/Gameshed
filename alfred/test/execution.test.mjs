@@ -244,3 +244,45 @@ test('runner rejection reports a safe diagnostic without echoing a credential', 
   assert.equal(r.json.code, 'identity-invalid');
   assert(!JSON.stringify(r.json).includes('secret-do-not-log'));
 });
+
+test('identity failures identify the exact phase without disclosing native errors or consuming approval', async t => {
+  const { h, approve } = await setup(t);
+  const id = (await approve()).json.workflow.decisionId;
+  const token = await h.runnerToken({ event_name: 'workflow_dispatch' });
+  const baseline = JSON.stringify(h.db.prepare('SELECT * FROM executions').all());
+  const comments = JSON.stringify(h.comments(4));
+  const realFetch = globalThis.fetch;
+  const subtle = globalThis.crypto.subtle;
+  const nativeVerify = subtle.verify;
+  const nativeImport = subtle.importKey;
+  const secret = 'synthetic-private-error-do-not-disclose';
+  const cases = [
+    ['signing-key-fetch-failed', async () => { throw new Error(secret); }],
+    ['identity-service-unavailable', async () => new Response(secret, { status: 403 })],
+    ['signing-key-response-invalid', async () => new Response(secret)],
+    ['signing-key-response-invalid', async () => Response.json({ keys: null })],
+    ['signing-key-unknown', async () => Response.json({ keys: [] })],
+    ['signing-key-import-failed', realFetch, 'import'],
+    ['signature-verification-failed', realFetch, 'verify'],
+  ];
+  try {
+    for (const [code, fetcher, brokenCrypto] of cases) {
+      globalThis.fetch = fetcher;
+      subtle.importKey = brokenCrypto === 'import' ? async () => { throw new Error(secret); } : nativeImport;
+      subtle.verify = brokenCrypto === 'verify' ? async () => { throw new Error(secret); } : nativeVerify;
+      const r = await h.request('/api/executor/probe', { method: 'POST', body: { decisionId: id }, headers: { Authorization: 'Bearer ' + token } });
+      assert.equal(r.status, 403);
+      assert.equal(r.json.code, code);
+      assert.ok(!JSON.stringify(r.json).includes(secret));
+      assert.ok(!JSON.stringify(r.json).includes(token));
+      assert.equal(JSON.stringify(h.db.prepare('SELECT * FROM executions').all()), baseline);
+      assert.equal(JSON.stringify(h.comments(4)), comments);
+    }
+  } finally { globalThis.fetch = realFetch; subtle.verify = nativeVerify; subtle.importKey = nativeImport; }
+  const malformed = await h.request('/api/executor/probe', { method: 'POST', body: { decisionId: id }, headers: { Authorization: 'Bearer e30.invalid.signature' } });
+  assert.equal(malformed.json.code, 'identity-invalid');
+  const parts = token.split('.'); parts[1] = Buffer.from(JSON.stringify({ aud: 'forged' })).toString('base64url');
+  const tampered = await h.request('/api/executor/probe', { method: 'POST', body: { decisionId: id }, headers: { Authorization: 'Bearer ' + parts.join('.') } });
+  assert.equal(tampered.json.code, 'signature-invalid');
+  assert.deepEqual(h.anthropicCalls, []);
+});
