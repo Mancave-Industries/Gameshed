@@ -95,7 +95,10 @@ function fakeGithub(repos, log) {
   return async (url, init = {}) => {
     const method = (init.method ?? 'GET').toUpperCase();
     log.push(method + ' ' + url.pathname + url.search);
-    if (url.pathname === '/user') return reply({ ...OWNER });
+    const token = new Headers(init.headers).get('Authorization')?.replace(/^Bearer /, '');
+    const auth = repos.Gameshed.authResponses?.[token];
+    if (auth?.status && auth.status !== 200) return reply({ message: 'Synthetic authentication failure' }, auth.status);
+    if (url.pathname === '/user') return reply(auth?.user ?? { ...OWNER });
     const runMatch = /^\/repos\/Mancave-Industries\/Gameshed\/actions\/runs\/(\d+)$/.exec(url.pathname);
     if (runMatch) return reply({ id: Number(runMatch[1]), head_sha: 'a'.repeat(40), path: '.github/workflows/alfred-execute.yml', event: repos.Gameshed.runEvent ?? 'issue_comment' }, repos.Gameshed.runStatus ?? 200);
     const git = /^\/repos\/Mancave-Industries\/([^/]+)\/git\/(.+)$/.exec(url.pathname);
@@ -211,12 +214,12 @@ export async function createHarness({ repos = liveFixtures(), anthropic = null, 
     throw new Error('Blocked outbound request in test: ' + url.href);
   };
 
-  async function signIn() {
+  async function signIn(token = 'ghu_testtoken') {
     const sessionId = b64url(webcrypto.getRandomValues(new Uint8Array(32)));
     const id = await sha256(sessionId);
     const key = await webcrypto.subtle.importKey('raw', Buffer.from(sessionKey, 'base64url'), 'AES-GCM', false, ['encrypt']);
     const iv = webcrypto.getRandomValues(new Uint8Array(12));
-    const cipher = await webcrypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode(id) }, key, encoder.encode('ghu_testtoken'));
+    const cipher = await webcrypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode(id) }, key, encoder.encode(token));
     db.prepare('INSERT INTO sessions (id, token, expires_at) VALUES (?, ?, ?)').run(id, b64url(iv) + '.' + b64url(new Uint8Array(cipher)), Date.now() + 3600_000);
     return sessionId;
   }
