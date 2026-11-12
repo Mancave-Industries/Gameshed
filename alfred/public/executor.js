@@ -27,7 +27,9 @@ export async function runnerIdentity(request, env) {
   if (!header || !claims || typeof claims !== 'object' || Array.isArray(claims) ||
       header.alg !== 'RS256' || typeof header.kid !== 'string') throw new Error('Invalid runner signature.');
   const jwks = await step('Runner signing-key request failed.', () =>
-    fetch('https://token.actions.githubusercontent.com/.well-known/jwks', { redirect: 'error', signal: AbortSignal.timeout(8000) }));
+    // Workers supports manual/follow only. Manual plus the !ok check below
+    // rejects redirects without following them or weakening identity checks.
+    fetch('https://token.actions.githubusercontent.com/.well-known/jwks', { redirect: 'manual', signal: AbortSignal.timeout(8000) }));
   if (!jwks.ok) throw new Error('GitHub identity verification is unavailable.');
   const keys = await step('Runner signing-key response is invalid.', async () => {
     const body = await jwks.json();
