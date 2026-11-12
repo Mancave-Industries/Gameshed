@@ -286,3 +286,28 @@ test('identity failures identify the exact phase without disclosing native error
   assert.equal(tampered.json.code, 'signature-invalid');
   assert.deepEqual(h.anthropicCalls, []);
 });
+
+test('signing-key fetch uses Worker-supported manual redirects and rejects redirect responses', async t => {
+  const { h, approve } = await setup(t);
+  const id = (await approve()).json.workflow.decisionId;
+  const token = await h.runnerToken({ event_name: 'workflow_dispatch' });
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(url, 'https://token.actions.githubusercontent.com/.well-known/jwks');
+    // Native Workers fetch throws for redirect:error; the Node harness does not.
+    assert.equal(init.redirect, 'manual');
+    calls++;
+    return new Response(null, { status: 302, headers: { location: 'https://untrusted.test/keys' } });
+  };
+  try {
+    const r = await h.request('/api/executor/probe', { method: 'POST', body: { decisionId: id },
+      headers: { Authorization: 'Bearer ' + token } });
+    assert.equal(r.status, 403);
+    assert.equal(r.json.code, 'identity-service-unavailable');
+    assert.equal(calls, 1, 'redirect destination was not requested');
+    assert.equal(h.db.prepare('SELECT status FROM executions').get().status, 'queued');
+    assert.equal(h.comments(4).length, 1);
+    assert.deepEqual(h.anthropicCalls, []);
+  } finally { globalThis.fetch = realFetch; }
+});
