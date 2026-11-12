@@ -80,6 +80,58 @@ test('simultaneous approvals and competing runner claims spend only once', async
   assert.equal(claims.filter(x => x.status === 'fulfilled').length, 1);
 });
 
+test('startup probe diagnoses an expired blocked grant without consuming or reviving it', async t => {
+  const { h, approve, api } = await setup(t);
+  const id = (await approve()).json.workflow.decisionId;
+  h.db.prepare('UPDATE executions SET status = ?, expires_at = ? WHERE decision_id = ?').run('blocked', 1, id);
+  h.repos.Gameshed.runEvent = 'workflow_dispatch';
+  const before = h.db.prepare('SELECT * FROM executions').all();
+  const comments = JSON.stringify(h.comments(4));
+  const logStart = h.githubLog.length;
+  const result = await api('/probe', { decisionId: id }, { event_name: 'workflow_dispatch' });
+  assert.deepEqual(result, { status: 'diagnosed', queueStatus: 'blocked', expired: true, alreadyClaimed: false, sourceFiles: 1, inferenceStarted: false });
+  assert.deepEqual(h.db.prepare('SELECT * FROM executions').all(), before);
+  assert.equal(JSON.stringify(h.comments(4)), comments);
+  assert.ok(h.githubLog.slice(logStart).every(line => line.startsWith('GET ')));
+  assert.deepEqual(h.anthropicCalls, []);
+  assert.deepEqual(h.blocked, []);
+  await assert.rejects(api('/claim', { decisionId: id }), /consumed/);
+});
+
+test('startup probe rejects unsigned and automatic requests and localises missing Actions access', async t => {
+  const { h, approve, api } = await setup(t);
+  const id = (await approve()).json.workflow.decisionId;
+  const unsigned = await h.request('/api/executor/probe', { method: 'POST', body: { decisionId: id } });
+  assert.equal(unsigned.status, 403);
+  await assert.rejects(api('/probe', { decisionId: id }), e => e.status === 403);
+  h.repos.Gameshed.runEvent = 'workflow_dispatch';
+  h.repos.Gameshed.runStatus = 403;
+  const rejected = await h.request('/api/executor/probe', { method: 'POST', body: { decisionId: id },
+    headers: { Authorization: 'Bearer ' + await h.runnerToken({ event_name: 'workflow_dispatch' }) } });
+  assert.deepEqual(rejected.json, { code: 'probe-actions-read-http-403' });
+  assert.equal(h.db.prepare('SELECT status FROM executions').get().status, 'queued');
+  assert.equal(h.comments(4).length, 1);
+});
+
+test('actual manual runner entry point stops after read-only probe without a model key', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'alfred-probe-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const event = join(root, 'event.json');
+  await writeFile(event, JSON.stringify({ inputs: { mode: 'startup-probe', decision_id: '123' } }));
+  const bootstrap = `globalThis.fetch = async (url, init) => {
+    if (String(url).startsWith('https://identity.test/')) return Response.json({value:'fake-oidc'});
+    if (url === 'https://alfred.test/api/executor/probe' && init.method === 'POST' && JSON.parse(init.body).decisionId === 123)
+      return Response.json({status:'diagnosed',queueStatus:'blocked',expired:true,alreadyClaimed:false,sourceFiles:1,inferenceStarted:false});
+    throw new Error('Unexpected outbound request');
+  };`;
+  const stdout = execFileSync(process.execPath, ['--import', 'data:text/javascript,' + encodeURIComponent(bootstrap),
+    new URL('../runner/run.mjs', import.meta.url).pathname], { encoding: 'utf8', env: { ...process.env,
+    ALFRED_ORIGIN: 'https://alfred.test', GITHUB_EVENT_PATH: event, GITHUB_EVENT_NAME: 'workflow_dispatch',
+    ACTIONS_ID_TOKEN_REQUEST_URL: 'https://identity.test/token', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'fake', ANTHROPIC_API_KEY: '' } });
+  assert.match(stdout, /Startup probe:.*"inferenceStarted":false/);
+  assert.ok(!stdout.includes('fake-oidc'));
+});
+
 test('no activation, missing cost consent, changed scope and unsigned callbacks cannot start Claude', async t => {
   const { h, session, approve, option } = await setup(t, { enabled: false });
   assert.equal((await approve()).status, 409);

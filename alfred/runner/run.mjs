@@ -135,11 +135,6 @@ async function main() {
   const origin = process.env.ALFRED_ORIGIN;
   if (!origin || new URL(origin).origin !== origin || !origin.startsWith('https://')) throw new Error('Invalid Alfred origin.');
   const evt = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH, 'utf8'));
-  const body = evt.comment?.body ?? '';
-  const marker = '<!-- alfred-workflow-event:v1 -->\n';
-  if (evt.comment?.user?.id !== 287470662 || !body.startsWith(marker)) throw new Error('No owner-authored approval event.');
-  const event = JSON.parse(body.slice(marker.length));
-  if (event.type !== 'choice' || event.option === 'defer') return;
   const identity = async () => {
     const u = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
     u.searchParams.set('audience', origin);
@@ -152,13 +147,27 @@ async function main() {
       headers: { Authorization: 'Bearer ' + await identity(), 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
     if (!r.ok) {
       const failure = await r.json().catch(() => ({}));
-      const code = typeof failure.code === 'string' && /^[a-z-]{1,64}$/.test(failure.code) ? failure.code : 'request-rejected';
+      const code = typeof failure.code === 'string' && /^[a-z0-9-]{1,64}$/.test(failure.code) ? failure.code : 'request-rejected';
       // Public diagnostics contain no response body, credentials or source.
       console.error('Alfred phase ' + path + ': HTTP ' + r.status + ', code ' + code + '.');
       throw new Error('Alfred could not confirm runner phase ' + path + '.');
     }
     return path === '/source' ? Buffer.from(await r.arrayBuffer()) : r.json();
   };
+  if (process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' && evt.inputs?.mode === 'startup-probe') {
+    const id = Number(evt.inputs.decision_id);
+    if (!Number.isSafeInteger(id) || id < 1) throw new Error('A numeric decision ID is required.');
+    const result = await api('/probe', { decisionId: id });
+    // No source, provider response or credentials are printed.
+    console.log('Startup probe: ' + JSON.stringify({ status: result.status, queueStatus: result.queueStatus,
+      expired: result.expired, alreadyClaimed: result.alreadyClaimed, sourceFiles: result.sourceFiles, inferenceStarted: false }));
+    return;
+  }
+  const body = evt.comment?.body ?? '';
+  const marker = '<!-- alfred-workflow-event:v1 -->\n';
+  if (evt.comment?.user?.id !== 287470662 || !body.startsWith(marker)) throw new Error('No owner-authored approval event.');
+  const event = JSON.parse(body.slice(marker.length));
+  if (event.type !== 'choice' || event.option === 'defer') return;
   const checkout = resolve('task-source');
   const prepareCheckout = async spec => {
     if (spec.profile === 'source-review') return;

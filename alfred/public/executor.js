@@ -106,6 +106,37 @@ export function executor(helpers) {
     await event(token, row.issue_number, { type: 'started', decisionId: id });
     return response({ decisionId: id, task: snapshot, files });
   }
+  // Read-only startup inspection. It never claims work, refreshes a grant,
+  // writes status events, returns source/credentials or invokes a model.
+  async function probe(env, claims, input) {
+    if (claims.event_name !== 'workflow_dispatch') return response({ code: 'probe-manual-only' }, 403);
+    if (!Number.isSafeInteger(input.decisionId) || input.decisionId < 1) return response({ code: 'decision-invalid' }, 400);
+    let phase = 'queue';
+    try {
+      const row = await db(env).prepare('SELECT * FROM executions WHERE decision_id = ?').bind(input.decisionId).first();
+      if (!row) return response({ code: 'queue-missing' }, 409);
+      phase = 'credential';
+      const token = await decryptToken(env, row.credential, 'execution:' + input.decisionId);
+      const snapshot = JSON.parse(row.snapshot);
+      phase = 'approval';
+      const { issue, state } = await current(token, row.issue_number);
+      if (issue.body !== snapshot.body || state.decisionId !== input.decisionId || state.choice !== snapshot.option) {
+        return response({ code: 'approval-scope-changed' }, 409);
+      }
+      phase = 'actions-read';
+      const run = await github(token, '/repos/' + OWNER + '/Gameshed/actions/runs/' + claims.run_id);
+      if (run.head_sha !== claims.sha || run.path !== '.github/workflows/alfred-execute.yml' || run.event !== claims.event_name) {
+        return response({ code: 'run-mismatch' }, 403);
+      }
+      phase = 'source';
+      const files = await source(token, snapshot.spec);
+      return response({ status: 'diagnosed', queueStatus: row.status, expired: row.expires_at < Date.now(),
+        alreadyClaimed: Boolean(row.run_id), sourceFiles: files.length, inferenceStarted: false });
+    } catch (error) {
+      const status = [401, 403, 404].includes(error?.status) ? '-http-' + error.status : '-failed';
+      return response({ code: 'probe-' + phase + status }, 403);
+    }
+  }
   async function publish(token, row, output) {
     const { spec } = JSON.parse(row.snapshot);
     const base = '/repos/' + OWNER + '/' + spec.repo;
@@ -206,6 +237,7 @@ export function executor(helpers) {
       diagnostic = 'request';
       const input = await request.json();
       if (JSON.stringify(input).length > 150000) return response({ error: 'Runner result exceeds the limit.' }, 413);
+      if (new URL(request.url).pathname.endsWith('/probe')) return await probe(env, claims, input);
       if (new URL(request.url).pathname.endsWith('/source')) {
         const row = await db(env).prepare('SELECT * FROM executions WHERE decision_id = ?').bind(input.decisionId).first();
         if (!row || row.run_id !== claims.run_id || row.status !== 'running') return response({ error: 'No active source grant.' }, 403);
