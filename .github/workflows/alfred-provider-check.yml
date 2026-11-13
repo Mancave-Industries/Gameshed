@@ -1,0 +1,21 @@
+name: Alfred free Claude provider check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  free-provider-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    environment: Alfred-preview
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Count tokens only, inference endpoint blocked
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node alfred/runner/provider-preflight.mjs

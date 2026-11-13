@@ -375,3 +375,35 @@ test('wrong owner and permission denial fail closed without credential fallback'
     h.restore();
   }
 });
+
+
+test('generation reports safe distinct phases, tracks inference attempts and never retries', async t => {
+  const secret = 'private-provider-text-sk-ant-not-for-publication';
+  const cases = [
+    { code: 'token-count-http-401', attempted: false, reply: () => new Response(secret, { status: 401 }) },
+    { code: 'budget-preflight', attempted: false, reply: () => Response.json({ input_tokens: 999999 }) },
+    { code: 'inference-http-429', attempted: true, reply: url => url.endsWith('/count_tokens') ? Response.json({ input_tokens: 1000 }) : new Response(secret, { status: 429 }) },
+    { code: 'inference-request', attempted: true, reply: url => { if (url.endsWith('/count_tokens')) return Response.json({ input_tokens: 1000 }); throw new Error(secret); } },
+    { code: 'completion-stop', attempted: true, answer: { stop_reason: 'max_tokens', content: [] } },
+    { code: 'output-json', attempted: true, answer: { stop_reason: 'end_turn', content: [{ type: 'text', text: secret }] } },
+    { code: 'output-scope', attempted: true, answer: { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ result: 'Review', files: [{ path: 'outside.js', content: secret }] }) }] } },
+    { code: 'next-decision', attempted: true, answer: { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ result: 'Review', files: [], nextDecision: { title: secret } }) }] } },
+  ];
+  for (const scenario of cases) {
+    const { h, approve, api } = await setup(t, { spec: { ...SPEC, profile: 'source-review' } });
+    const id = (await approve()).json.workflow.decisionId;
+    let inferenceCalls = 0;
+    const response = async url => {
+      if (!url.endsWith('/count_tokens')) inferenceCalls++;
+      return scenario.reply ? scenario.reply(url) : url.endsWith('/count_tokens') ? Response.json({ input_tokens: 1000 }) : Response.json(scenario.answer);
+    };
+    await assert.rejects(run({ decisionId: id, api, apiKey: 'fake', provider: response }));
+    const blocked = h.comments(4).map(c => c.body).find(b => b.includes('"type":"blocked"'));
+    assert.ok(blocked.includes('Generation diagnostic: ' + scenario.code + '.'));
+    assert.ok(!blocked.includes(secret));
+    assert.ok(blocked.includes(scenario.attempted ? 'One inference request was attempted' : 'Claude inference was not attempted'));
+    assert.equal(inferenceCalls, scenario.attempted ? 1 : 0);
+    assert.equal(h.comments(4).filter(c => c.body.includes('"type":"completed"')).length, 0);
+    h.restore();
+  }
+});
