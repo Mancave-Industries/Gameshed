@@ -40,7 +40,7 @@ function provider(output, calls) {
     calls.push(url);
     if (url.endsWith('/count_tokens')) return Response.json({ input_tokens: 1000 });
     assert.equal(JSON.parse(init.body).model, 'claude-haiku-4-5-20251001');
-    return Response.json({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(output) }], usage: { input_tokens: 1000, output_tokens: 500 } });
+    return Response.json({ stop_reason: 'tool_use', content: [{ type: 'tool_use', name: 'submit_result', input: output }], usage: { input_tokens: 1000, output_tokens: 500 } });
   };
 }
 
@@ -199,6 +199,26 @@ test('budget preflight, truncation and malformed output stop without inference r
     inference++; throw new Error('unknown transport result');
   }), /transport/);
   assert.equal(inference, 1);
+});
+
+test('Claude returns a typed result without parsing its surrounding prose or executing a tool', async () => {
+  const output = { result: 'Reviewed source only.', files: [], nextDecision: NEXT };
+  const requests = [];
+  const provider = async (url, init) => {
+    const body = JSON.parse(init.body); requests.push(body);
+    assert.equal(body.tools[0].name, 'submit_result');
+    assert.equal(body.tool_choice.name, 'submit_result');
+    if (url.endsWith('/count_tokens')) return Response.json({ input_tokens: 1000 });
+    return Response.json({ stop_reason: 'tool_use', content: [
+      { type: 'text', text: 'Here is the review (not JSON).' },
+      { type: 'tool_use', name: 'submit_result', input: output },
+    ] });
+  };
+  assert.deepEqual(await generate({ spec: { ...SPEC, profile: 'source-review' }, project: 'Alfred' }, [], 'fake', provider), output);
+  assert.equal(requests.length, 2, 'one count plus one inference, never a tool execution turn');
+  assert.deepEqual(requests[0].tools, requests[1].tools, 'count includes the return schema');
+  output.files.push({ path: 'value.js', content: 'unapproved edit' });
+  await assert.rejects(generate({ spec: { ...SPEC, profile: 'source-review' } }, [], 'fake', provider), /scope/);
 });
 
 test('paths, repository and verification profile cannot escape the approved sandbox', () => {

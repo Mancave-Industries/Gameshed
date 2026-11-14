@@ -37,6 +37,11 @@ cache, batch or retry surcharges are requested. Count failures or an insufficien
 grant stop before inference. Provider billing remains in USD; no exchange-rate
 promise is made. Pricing must be reviewed when changing the pinned model.
 
+Claude returns its object through the `submit_result` client tool envelope. This
+tool is never executed: its input goes directly to independent scope validation.
+The token count includes the envelope schema. Exactly one inference request is
+made; malformed responses do not cause a paid retry.
+
 Claude receives only the approved text files (60 KB total, 20 paths maximum), not
 credentials or the full archive. It returns complete edits to existing approved
 files and a report. No model-generated shell command is run. The verifier runs

@@ -55,6 +55,8 @@ let data = null;
 let loading = false;
 let awaitingNote = null;
 let knownAttention = null;
+let selectedAttention = null;
+let renderedData = null;
 
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -134,7 +136,7 @@ function attention() {
 }
 
 function focus() {
-  return attention()[0] ?? null;
+  return attention().find(item => item.key === selectedAttention) ?? attention()[0] ?? null;
 }
 
 function findWorkflow(number) {
@@ -358,11 +360,19 @@ function renderAttention() {
   }
   const items = attention();
   waitingCount.textContent = items.length > 1 ? items.length + ' waiting' : '';
+  const current = focus();
   attentionCard.replaceChildren(items.length
-    ? liveCard(items[0].key)
+    ? liveCard(current.key)
     : el('div', { class: 'empty-state' },
       el('p', { class: 'doing-title', text: 'Nothing needs you' }),
       el('p', { class: 'muted', text: 'Alfred will put the next real decision here.' })));
+  if (items.length > 1) {
+    const picker = el('select', { id: 'attention-picker', 'aria-label': 'Choose another item' },
+      items.map(item => el('option', { value: item.key, text: item.workflow.project + ' · ' + item.workflow.title })));
+    picker.value = current.key;
+    picker.addEventListener('change', () => { selectedAttention = picker.value; renderAttention(); });
+    attentionCard.prepend(el('label', { for: 'attention-picker', text: 'Choose another item' }), picker);
+  }
 }
 
 function recentWorkflows() {
@@ -425,6 +435,13 @@ function renderProjects() {
 }
 
 function render(force = true) {
+  // An unchanged poll must not detach controls, collapse evidence or lose notes.
+  const signature = JSON.stringify({ workflows: data.workflows, projects: data.projects });
+  if (!force && signature === renderedData) {
+    freshness.textContent = 'Checked ' + timeFormat.format(new Date(data.checkedAt));
+    return;
+  }
+  renderedData = signature;
   renderDoing();
   if (force || !attentionCard.contains(document.activeElement)) renderAttention();
   renderRecent();
