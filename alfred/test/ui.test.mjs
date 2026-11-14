@@ -42,6 +42,23 @@ const shot = (page, name) => shots
   ? page.screenshot({ path: shots + '/' + name + '.png', fullPage: true })
   : null;
 
+test('another decision is reachable without accepting a result; unchanged polls preserve controls', { skip: !playwright }, async t => {
+  const { page } = await open(t);
+  const picker = page.getByLabel('Choose another item', { exact: true });
+  const options = await picker.locator('option').evaluateAll(nodes => nodes.map(n => ({ value: n.value, text: n.textContent })));
+  assert.ok(options.length > 1);
+  await picker.selectOption(options.at(-1).value);
+  const card = page.locator('#attention-card .focus-card');
+  assert.equal(await card.getAttribute('data-card'), options.at(-1).value);
+  await page.evaluate(() => { window.originalCard = document.querySelector('#attention-card .focus-card'); });
+  const refresh = page.waitForResponse(response => response.url().endsWith('/api/workspace'));
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await refresh;
+  await page.waitForFunction(() => document.querySelector('#freshness').textContent.startsWith('Checked'));
+  assert.equal(await page.evaluate(() => window.originalCard === document.querySelector('#attention-card .focus-card')), true);
+  await shot(page, 'choose-another-item');
+});
+
 async function ask(page, text) {
   await page.getByRole('button', { name: 'Ask Alfred' }).click();
   await page.fill('#say', text);
