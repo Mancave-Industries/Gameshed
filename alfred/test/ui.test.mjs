@@ -59,6 +59,24 @@ test('another decision is reachable without accepting a result; unchanged polls 
   await shot(page, 'choose-another-item');
 });
 
+test('Alfred is the primary decision; reject and project reports do not call a model', { skip: !playwright }, async t => {
+  const repos = liveFixtures();
+  const marker = '<!-- alfred-workflow:v1 -->\n';
+  const proposal = JSON.parse(repos.Gameshed.issues[2].body.slice(marker.length));
+  proposal.project = 'Alfred';
+  repos.Gameshed.issues[2].body = marker + JSON.stringify(proposal);
+  const { h, page } = await open(t, { repos });
+  assert.equal(await page.locator('#attention-card .focus-card').getAttribute('data-card'), 'wf-4');
+  await page.locator('#attention-card').getByRole('button', { name: /Reject:/ }).click();
+  await page.locator('#home-status').getByText('Recommendation rejected. No work was approved.').waitFor();
+  assert.equal(h.repos.Gameshed.issues[2].state, 'closed');
+  assert.equal(h.comments(4).some(c => c.body.includes('"type":"choice"')), false);
+  await page.locator('#project-list').getByText('Alfred', { exact: true }).click();
+  await page.getByRole('button', { name: 'Progress report: Alfred', exact: true }).click();
+  await page.locator('#thread').getByText('Alfred — progress report', { exact: true }).waitFor();
+  assert.equal(h.anthropicCalls.length, 0);
+});
+
 async function ask(page, text) {
   await page.getByRole('button', { name: 'Ask Alfred' }).click();
   await page.fill('#say', text);
@@ -67,15 +85,15 @@ async function ask(page, text) {
 
 test('mobile home shows one current item, one action and collapsed secondary information', { skip: !playwright }, async t => {
   const { h, page, errors } = await open(t);
-  await page.getByRole('heading', { name: 'Doing now' }).waitFor();
-  await page.getByRole('heading', { name: 'Needs you' }).waitFor();
+  await page.getByRole('heading', { name: 'Happening now' }).waitFor();
+  await page.getByRole('heading', { name: 'Needs me' }).waitFor();
   const attention = page.locator('#attention-card');
   await attention.getByRole('heading', { name: 'Choose the first Biology lesson to review' }).waitFor();
   assert.equal(await attention.getByRole('heading', { name: 'Choose the next Osmosis readiness step' }).count(), 0);
   await attention.getByRole('button', { name: 'Accept result' }).waitFor();
   await attention.getByRole('button', { name: 'Send back' }).waitFor();
   assert.equal(await page.locator('#recent-section').evaluate(node => node.open), false);
-  assert.equal(await page.locator('#projects-section').evaluate(node => node.open), false);
+  assert.equal(await page.locator('#project-list > li').count(), 5);
   assert.equal(await page.locator('.stepper').count(), 0);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await shot(page, '1-simple-home');
@@ -89,9 +107,9 @@ test('accepting a result reveals the next decision with three plain actions', { 
   await page.getByText('Result accepted. That loop is closed.').waitFor();
   const attention = page.locator('#attention-card');
   await attention.getByRole('heading', { name: 'Choose the next Osmosis readiness step' }).waitFor();
-  await attention.getByRole('button', { name: /Do it: Tighten Osmosis wording first/ }).waitFor();
-  await attention.getByText('Other options', { exact: true }).waitFor();
-  await attention.getByRole('button', { name: /Decide later/ }).waitFor();
+  await attention.getByRole('button', { name: /Approve: Tighten Osmosis wording first/ }).waitFor();
+  await attention.getByText('DISCUSS', { exact: true }).waitFor();
+  await attention.getByRole('button', { name: /Reject:/ }).waitFor();
   assert.match(h.comments(3).at(-1).body, /"type":"verified","decisionId":6772342268,"by":"owner"/);
   await shot(page, '2-next-decision');
 });
@@ -100,7 +118,7 @@ test('Other options reveals trade-offs and an alternate choice', { skip: !playwr
   const { h, page } = await open(t);
   await page.getByRole('button', { name: 'Accept result' }).click();
   const attention = page.locator('#attention-card');
-  await attention.getByText('Other options', { exact: true }).click();
+  await attention.getByText('DISCUSS', { exact: true }).click();
   await attention.getByRole('heading', { name: 'Test the practical flow first' }).waitFor();
   await attention.getByRole('button', { name: 'Choose Test the practical flow first' }).click();
   await page.getByText('Approved “Test the practical flow first”. Alfred will report back here.').waitFor();
@@ -131,30 +149,32 @@ test('a result can be sent back only with a note', { skip: !playwright }, async 
   await attention.getByRole('button', { name: 'Send back with note' }).click();
   await page.getByText('Sent back with your note.').waitFor();
   assert.match(h.comments(3).at(-1).body, /"type":"verification_failed".*"result":"The physical iPhone check is still missing."/);
-  await page.locator('#doing-card').getByText('Sent back').waitFor();
+  await page.locator('#blocked-section > summary').click();
+  await page.locator('#blocked-list').getByText('Sent back').waitFor();
 });
 
 test('projects and conversation remain available on demand', { skip: !playwright }, async t => {
   const { page } = await open(t);
-  await page.locator('#projects-section > summary').click();
   await page.locator('#project-list').getByText('Science Buddy', { exact: true }).click();
-  await page.getByText('Review one existing Biology topic, then validate it on iPhone as the first pilot.').waitFor();
+  await page.getByRole('button', { name: 'Progress report: Science Buddy' }).waitFor();
   await ask(page, 'how is science buddy doing?');
   const reply = page.locator('.message.alfred').last();
-  await reply.getByText('Science Buddy', { exact: true }).waitFor();
+  await reply.getByText('Science Buddy — progress report', { exact: true }).waitFor();
   await shot(page, '4-projects-and-ask');
 });
 
 test('Later advances the queue and keeps the deferred choice available without reviving old project approvals', { skip: !playwright }, async t => {
   const { h, page } = await open(t);
   await page.getByRole('button', { name: 'Accept result' }).click();
-  await page.locator('#attention-card').getByRole('button', { name: /Decide later/ }).click();
-  await page.getByText('Saved for later.', { exact: true }).waitFor();
+  await ask(page, 'later');
+  await page.locator('#ask').getByRole('button', { name: 'Save for later' }).click();
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.locator('#home-status').getByText('Saved for later.', { exact: true }).waitFor();
   await page.locator('#attention-card').getByText('Nothing needs you', { exact: true }).waitFor();
   assert.equal(h.repos['risk-assessment-songbook'].issues[0].body.includes('Answer:'), false);
   await page.locator('#later-section > summary').click();
   await page.locator('#later-list > li > details > summary').click();
-  await page.locator('#later-list').getByRole('button', { name: 'Do it: Tighten Osmosis wording first' }).click();
+  await page.locator('#later-list').getByRole('button', { name: 'Approve: Tighten Osmosis wording first' }).click();
   await page.getByText('Approved “Tighten Osmosis wording first”. Alfred will report back here.', { exact: true }).waitFor();
   assert.match(h.comments(4).at(-1).body, /"option":"tighten-osmosis"/);
 });
@@ -232,7 +252,7 @@ test('automatic loop keeps cost, execution, checked result and next decision int
   repos.Gameshed.issues[2].body = marker + JSON.stringify(proposal);
   const { h, page } = await open(t, { repos, execution: true });
   await page.locator('#attention-card').getByText('One model request · US$0.20 maximum', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Do it: Tighten Osmosis wording first · US$0.20 max' }).click();
+  await page.getByRole('button', { name: 'Approve: Tighten Osmosis wording first · US$0.20 max' }).click();
   await page.getByText('Approved “Tighten Osmosis wording first”. Alfred will report back here.').waitFor();
   const decisionId = h.comments(4)[0].id;
   const executorApi = async (path, body) => {

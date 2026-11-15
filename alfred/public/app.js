@@ -17,7 +17,6 @@ const waitingCount = $('#waiting-count');
 const recentSection = $('#recent-section');
 const recentList = $('#recent-list');
 const recentCount = $('#recent-count');
-const projectsSection = $('#projects-section');
 const projectList = $('#project-list');
 const projectsCount = $('#projects-count');
 const homeStatus = $('#home-status');
@@ -35,14 +34,15 @@ const signInMessages = {
 const STATUS = {
   decision: 'Needs your decision',
   deferred: 'Waiting for you',
-  queued: 'Queued',
-  running: 'In progress',
+  queued: 'Queued · waiting for Claude',
+  running: 'Running · Claude is working',
   checking: 'Checking the result',
   blocked: 'Blocked',
-  completed: 'Ready for your check',
+  completed: 'Completed · result available',
   verifying: 'Being checked',
-  verified: 'Finished',
+  verified: 'Verified · checks passed',
   verification_failed: 'Sent back',
+  rejected: 'Rejected',
 };
 const timeFormat = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit',
@@ -132,7 +132,8 @@ function inProgress() {
 }
 
 function attention() {
-  return [...pendingChecks(), ...pendingDecisions()];
+  return [...pendingChecks(), ...pendingDecisions()].sort((a, b) =>
+    Number(b.workflow.project === data?.focusProject) - Number(a.workflow.project === data?.focusProject));
 }
 
 function focus() {
@@ -170,19 +171,23 @@ function decisionCard(workflow, preselect) {
   const doIt = el('button', {
     type: 'button',
     class: 'button primary-action',
-    text: (preselect ? 'Confirm' : 'Do it') + (selected.execution
+    text: (preselect ? 'CONFIRM' : 'APPROVE') + (selected.execution
       ? ' · US$' + (selected.execution.maxMicrousd / 1_000_000).toFixed(2) + ' max' : ''),
-    'aria-label': (preselect ? 'Confirm: ' : 'Do it: ') + selected.label +
+    'aria-label': (preselect ? 'Confirm: ' : 'Approve: ') + selected.label +
       (selected.execution ? ' · US$' + (selected.execution.maxMicrousd / 1_000_000).toFixed(2) + ' max' : ''),
   });
-  const later = el('button', {
+  const reject = el('button', {
     type: 'button',
-    class: 'button quiet-action',
-    text: 'Later',
-    'aria-label': 'Decide later — ' + workflow.title,
+    class: 'button danger-action',
+    text: 'REJECT',
+    'aria-label': 'Reject: ' + workflow.title,
   });
   const discussionBody = el('div', { class: 'discussion-body' },
-    el('p', { class: 'discussion-intro', text: 'Choose a different route if Alfred’s recommendation is not right.' }));
+    el('p', { class: 'discussion-intro', text: 'Choose another route, or talk it through with Alfred.' }),
+    el('button', { type: 'button', class: 'button', text: 'Talk this through', onclick: () => {
+      selectedAttention = key; openAsk();
+      message('alfred', 'Let’s discuss “' + workflow.title + '”. ' + workflow.summary + ' What would you like to change?');
+    } }));
   for (const option of workflow.options.filter(option => option.id !== selected.id)) {
     const choose = el('button', {
       type: 'button',
@@ -197,9 +202,9 @@ function decisionCard(workflow, preselect) {
     choose.addEventListener('click', () => chooseWorkflow(workflow, option, status, card));
   }
   const discuss = el('details', { class: 'discussion' },
-    el('summary', { class: 'button discuss-action', text: 'Other options' }),
+    el('summary', { class: 'button discuss-action', text: 'DISCUSS' }),
     discussionBody);
-  const actions = el('div', { class: 'decision-actions' }, doIt, discuss, later);
+  const actions = el('div', { class: 'decision-actions' }, doIt, discuss, reject);
   const card = cardShell(key, workflow.project + ' · Decision', workflow.title,
     el('div', { class: 'recommendation' },
       el('p', { class: 'recommendation-label', text: preselect ? 'You selected' : 'Alfred recommends' }),
@@ -217,7 +222,14 @@ function decisionCard(workflow, preselect) {
       el('p', { class: 'summary', text: workflow.summary }),
       el('a', { href: workflow.url, class: 'record-link', text: 'Open the workflow record ↗' })));
   doIt.addEventListener('click', () => chooseWorkflow(workflow, selected, status, card));
-  later.addEventListener('click', () => chooseWorkflow(workflow, { id: 'defer', label: 'Later' }, status, card));
+  reject.addEventListener('click', async () => {
+    card.inert = true;
+    status.textContent = 'Rejecting recommendation…';
+    try {
+      const saved = await post('/api/workflows/' + workflow.number + '/reject', {});
+      replaceWorkflow(saved.workflow); render(); announce('Recommendation rejected. No work was approved.');
+    } catch (error) { card.inert = false; status.classList.add('error'); status.textContent = error.message; }
+  });
   return card;
 }
 
@@ -326,7 +338,7 @@ function refreshConversationCards() {
 
 function renderDoing() {
   const rank = { running: 0, checking: 1, queued: 2, verification_failed: 3, blocked: 4 };
-  const items = inProgress().sort((a, b) => rank[a.status] - rank[b.status]);
+  const items = inProgress().filter(w => ['running', 'checking', 'queued'].includes(w.status)).sort((a, b) => rank[a.status] - rank[b.status]);
   doingCount.textContent = items.length > 1 ? String(items.length) : '';
   if (!items.length) {
     doingCard.replaceChildren(el('div', { class: 'doing-card idle' },
@@ -392,11 +404,16 @@ function recentEntry(workflow) {
 }
 
 function renderRecent() {
-  const recent = recentWorkflows();
+  const recent = recentWorkflows().filter(w => ['completed', 'verifying', 'verified'].includes(w.status));
   recentCount.textContent = String(recent.length);
   recentList.replaceChildren(...(recent.length
     ? recent.map(recentEntry)
     : [el('li', { class: 'empty-list', text: 'No activity yet.' })]));
+  const blocked = openWorkflows().filter(w => ['blocked', 'verification_failed'].includes(w.status));
+  $('#blocked-section').hidden = !blocked.length;
+  $('#blocked-count').textContent = String(blocked.length);
+  $('#blocked-list').replaceChildren(...blocked.map(recentEntry));
+  $('#history-list').replaceChildren(...recentWorkflows().filter(w => !w.open || w.status === 'rejected').map(recentEntry));
   const deferred = openWorkflows().filter(item => item.status === 'deferred');
   $('#later-section').hidden = !deferred.length;
   $('#later-count').textContent = String(deferred.length);
@@ -415,15 +432,34 @@ function projectEntry(project) {
       el('summary', {},
         el('span', {},
           el('strong', { text: project.name }),
-          el('span', { class: 'list-subtitle', text: project.status })),
+          el('span', { class: 'list-subtitle', text: project.status }),
+          el('span', { class: 'list-subtitle', text: 'Next: ' + project.next })),
         el('span', { class: 'chevron', 'aria-hidden': 'true', text: '›' })),
       el('dl', { class: 'project-facts' },
         el('dt', { text: 'Next' }), el('dd', { text: project.next }),
         el('dt', { text: 'Blocked by' }), el('dd', { text: project.blocker })),
+      el('button', { type: 'button', class: 'button report-button', text: 'Progress report',
+        'aria-label': 'Progress report: ' + project.name, onclick: () => projectReport(project) }),
       links.length ? el('details', { class: 'evidence' },
         el('summary', { text: 'Technical records' }),
         el('ul', { class: 'record-list' }, links.map(link =>
           el('li', {}, el('a', { href: link.url, text: link.title }))))) : null));
+}
+
+function projectReport(project) {
+  openAsk();
+  const flows = workflows().filter(w => w.project === project.name).sort((a, b) => b.number - a.number);
+  const active = flows.filter(w => w.open && ['queued', 'running', 'checking'].includes(w.status));
+  const blocked = flows.filter(w => w.open && ['blocked', 'verification_failed'].includes(w.status));
+  const finished = flows.find(w => ['verified', 'completed'].includes(w.status));
+  message('alfred', el('p', { class: 'message-title', text: project.name + ' — progress report' }),
+    el('p', { text: project.status }),
+    el('p', { text: active.length ? active.map(w => STATUS[w.status] + ': ' + (optionLabel(w) ?? w.title)).join('\n') : 'Nothing is running for this project.' }),
+    blocked.length ? el('p', { text: 'Blocked: ' + blocked.map(w => w.title).join('; ') }) : null,
+    finished ? el('p', { text: 'Latest result: ' + finished.title + '. ' + STATUS[finished.status] + '.' }) : null,
+    el('p', { text: 'Next: ' + project.next }),
+    finished ? el('details', { class: 'evidence' }, el('summary', { text: 'Read the findings' }), reportPreview(finished.result)) : null,
+    el('p', { class: 'muted small', text: 'Based on Alfred’s records, checked ' + when(data.checkedAt) + '. No model call needed.' }));
 }
 
 function renderProjects() {
@@ -671,7 +707,7 @@ function respond(raw) {
     return;
   }
 
-  const firstDecision = decisions[0];
+  const firstDecision = current?.kind === 'workflow' ? current : decisions[0];
   if (firstDecision?.kind === 'workflow') {
     const option = matchOption(text, firstDecision.workflow);
     if (option && /\b(approve|go|choose|pick|option|choice|do|yes|let's|first|second|third|\d)\b/.test(text)) {
@@ -691,7 +727,7 @@ function respond(raw) {
       awaitingNote = current.workflow.number;
       message('alfred', 'What needs fixing? Tell me in one sentence.');
     } else {
-      message('alfred', 'Open Other options on the decision card to see the other choices.');
+      message('alfred', 'Use REJECT on the recommendation to decline it, or DISCUSS to choose another route.', liveCard(current.key));
     }
     return;
   }
@@ -699,6 +735,7 @@ function respond(raw) {
   for (const [pattern, id, name] of PROJECT_WORDS) {
     if (!pattern.test(text)) continue;
     const project = data.projects?.find(item => item.id === id);
+    if (project) { projectReport(project); return; }
     const flows = openWorkflows().filter(item => item.project.toLowerCase() === name.toLowerCase());
     const lines = [];
     if (project) lines.push(project.status, 'Next: ' + project.next, 'Blocked by: ' + project.blocker);
@@ -706,6 +743,10 @@ function respond(raw) {
     message('alfred', el('p', { class: 'message-title', text: name }),
       el('p', { class: 'prewrap', text: lines.join('\n') }));
     return;
+  }
+  if (/alfred/.test(text) && /report|progress|status|how/.test(text)) {
+    const project = data.projects?.find(item => item.id === 'alfred');
+    if (project) { projectReport(project); return; }
   }
   if (/(happening|in progress|progress|working on|running|doing|busy)/.test(text)) {
     message('alfred', el('p', { class: 'prewrap', text: describeNow() }));
@@ -845,6 +886,13 @@ for (const chip of document.querySelectorAll('[data-say]')) {
 refreshButton.addEventListener('click', () => load(true));
 retry.addEventListener('click', () => load(true));
 $('#open-ask').addEventListener('click', openAsk);
+$('#home-composer').addEventListener('submit', event => {
+  event.preventDefault();
+  const input = $('#home-say');
+  const text = input.value.trim();
+  if (!text || !data) return;
+  input.value = ''; openAsk(); message('me', text); respond(text);
+});
 $('#close-ask').addEventListener('click', () => askDialog.close());
 askDialog.addEventListener('click', event => {
   if (event.target === askDialog) askDialog.close();

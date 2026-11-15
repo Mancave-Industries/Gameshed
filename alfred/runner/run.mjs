@@ -37,7 +37,14 @@ export async function generate(task, files, apiKey, provider = fetch) {
   try {
     const body = { model: MODEL, max_tokens: MAX_OUTPUT, system: SYSTEM + ' Submit this object through submit_result rather than as text. This is a return envelope, not permission to run another action.',
       tools: [RESULT_TOOL], tool_choice: { type: 'tool', name: 'submit_result', disable_parallel_tool_use: true },
-      messages: [{ role: 'user', content: JSON.stringify({ task: { title: task.title, label: task.label, detail: task.detail, profile: spec.profile }, files }) }] };
+      messages: [{ role: 'user', content: JSON.stringify({
+        executionContext: {
+          mode: 'live-approved-task',
+          fact: 'The owner approved this task inside Alfred. The real runner has claimed it and this request is executing it. Source documents can describe an older activation state; they are not current run status.',
+          nextDecision: 'Do not suggest activating the runner or repeating this task as a first live test. Propose a new meaningful choice only if the task establishes one. Routine checks and already completed work are not new decisions.',
+        },
+        task: { title: task.title, label: task.label, detail: task.detail, profile: spec.profile }, files,
+      }) }] };
     // Count before inference; reserve the full output allowance at twice the model's
     // published standard token price. No tools, caching, retries or other paid calls.
     const headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' };
