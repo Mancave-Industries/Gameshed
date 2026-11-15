@@ -72,6 +72,48 @@ test('complete real HTTP path: approve → runner claim → Claude adapter → c
   assert.deepEqual(h.blocked, []);
 });
 
+test('source download uses Worker-supported redirects and never forwards credentials or follows a second redirect', async t => {
+  const { h, approve, api } = await setup(t);
+  const id = (await approve()).json.workflow.decisionId;
+  await api('/claim', { decisionId: id });
+  const token = await h.runnerToken();
+  const realFetch = globalThis.fetch;
+  const archiveUrl = 'https://api.github.com/repos/Mancave-Industries/Gameshed/tarball/' + SPEC.sha;
+  const downloadUrl = 'https://codeload.github.com/Mancave-Industries/Gameshed/legacy.tar.gz/' + SPEC.sha;
+  let downloadStatus = 200;
+  const downloads = [];
+  globalThis.fetch = async (url, init) => {
+    const target = String(url);
+    if (target === archiveUrl) {
+      assert.equal(init.redirect, 'manual');
+      assert.ok(init.headers.Authorization.startsWith('Bearer '));
+      return new Response(null, { status: 302, headers: { location: downloadUrl } });
+    }
+    if (target === downloadUrl) {
+      assert.equal(init.redirect, 'manual', 'Workers rejects redirect:error');
+      assert.equal(init.headers, undefined, 'GitHub credential never reaches codeload');
+      downloads.push(target);
+      return new Response('synthetic archive', { status: downloadStatus,
+        headers: downloadStatus === 302 ? { location: 'https://untrusted.test/archive' } : {} });
+    }
+    return realFetch(url, init);
+  };
+  try {
+    const request = () => h.request('/api/executor/source', { method: 'POST', body: { decisionId: id },
+      headers: { Authorization: 'Bearer ' + token } });
+    const ok = await request();
+    assert.equal(ok.status, 200);
+    assert.equal(ok.text, 'synthetic archive');
+    downloadStatus = 302;
+    const rejected = await request();
+    assert.equal(rejected.status, 403);
+    assert.equal(rejected.json.code, 'source-download-unavailable');
+    assert.equal(downloads.length, 2);
+    assert.deepEqual(h.blocked, [], 'no second redirect destination was fetched');
+    assert.deepEqual(h.anthropicCalls, []);
+  } finally { globalThis.fetch = realFetch; }
+});
+
 test('simultaneous approvals and competing runner claims spend only once', async t => {
   const { approve, api } = await setup(t);
   const results = await Promise.all([approve(), approve()]);
