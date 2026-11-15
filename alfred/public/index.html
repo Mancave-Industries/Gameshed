@@ -30,7 +30,7 @@
   <main id="workspace" hidden>
     <section class="home-section attention-section" aria-labelledby="needs-heading">
       <div class="section-heading">
-        <h2 id="needs-heading">Needs you</h2>
+        <h2 id="needs-heading">Needs me</h2>
         <span id="waiting-count" class="count"></span>
       </div>
       <div id="attention-card"></div>
@@ -38,11 +38,26 @@
 
     <section class="home-section" aria-labelledby="doing-heading">
       <div class="section-heading">
-        <h2 id="doing-heading">Doing now</h2>
+        <h2 id="doing-heading">Happening now</h2>
         <span id="doing-count" class="count" aria-hidden="true"></span>
       </div>
       <div id="doing-card"></div>
     </section>
+
+    <section class="home-section" aria-labelledby="projects-heading">
+      <div class="section-heading"><h2 id="projects-heading">My projects</h2><span id="projects-count" class="count"></span></div>
+      <ul id="project-list" class="drawer-list project-grid"></ul>
+    </section>
+
+    <form id="home-composer" class="home-conversation">
+      <label for="home-say">Talk to Alfred</label>
+      <div class="composer"><textarea id="home-say" rows="1" maxlength="800" placeholder="Ask a question or discuss a decision…"></textarea><button class="send" type="submit">Send</button></div>
+    </form>
+
+    <details id="blocked-section" class="drawer" hidden>
+      <summary><span>Blocked work</span><span id="blocked-count" class="count"></span></summary>
+      <ul id="blocked-list" class="drawer-list"></ul>
+    </details>
 
     <details id="later-section" class="drawer" hidden>
       <summary><span>Saved for later</span><span id="later-count" class="count"></span></summary>
@@ -51,18 +66,15 @@
 
     <details id="recent-section" class="drawer">
       <summary>
-        <span>Activity and results</span>
+        <span>Results</span>
         <span id="recent-count" class="count"></span>
       </summary>
       <ul id="recent-list" class="drawer-list"></ul>
     </details>
 
-    <details id="projects-section" class="drawer">
-      <summary>
-        <span>Projects</span>
-        <span id="projects-count" class="count"></span>
-      </summary>
-      <ul id="project-list" class="drawer-list"></ul>
+    <details id="history-section" class="drawer">
+      <summary><span>Earlier records</span></summary>
+      <ul id="history-list" class="drawer-list"></ul>
     </details>
 
     <button id="open-ask" class="ask-button" type="button">Ask Alfred</button>

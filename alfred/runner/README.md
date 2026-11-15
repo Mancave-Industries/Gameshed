@@ -87,7 +87,18 @@ A paid interrupted run needs review and a fresh proposal before another model ca
 The current hourly reviewer remains available. This implementation does not claim
 durable recovery of model output if the entire Actions machine is destroyed.
 
-## Activation still requires owner approval
+## Live evidence and activation
+
+The isolated Alfred review preview completed a real approved source review on
+14 November 2026. Gameshed issue #28 records choice 6873381066, completion
+6873386236 and automated verification 6873386733. Actions run 43568329490
+finished successfully. This proves approval, one real Claude request, result
+delivery and next-decision publication. It does not prove that every generated
+code change is correct or that the owner accepted the report's factual claims.
+The generated follow-up #29 repeated an already completed test and was redundant.
+
+The steps below are the original activation checklist, not the current live
+status. Use recorded runs and events for current evidence.
 
 1. Review and merge the implementation into Gameshed's default branch. GitHub
    delivers `issue_comment` only to workflows installed on that branch. Merely
@@ -110,9 +121,9 @@ durable recovery of model output if the entire Actions machine is destroyed.
    Claude response, returned evidence, verified result and next decision after
    refresh. This paid live check is separate from the no-cost test below.
 
-Until all five steps pass, describe the implementation as staged and tested with
-a simulated provider, not live or complete. Existing historical project choices
-are never inferred as approval for a paid run, merge or deployment.
+For a new deployment, all five steps must pass before calling its execution path
+live. Existing historical project choices are never inferred as approval for a
+paid run, merge or deployment.
 
 ## Evidence and tests
 

@@ -30,10 +30,28 @@ test('workspace reflects the live records: #3 awaiting a check, #4 awaiting a de
   assert.equal(byNumber[3].result, OSMOSIS_RESULT);
   assert.deepEqual(byNumber[3].events.map(e => e.type), ['choice', 'started', 'completed']);
   assert.equal(byNumber[4].status, 'decision');
-  assert.equal(json.projects.length, 4);
+  assert.equal(json.projects.length, 5);
+  assert.equal(json.projects[0].name, 'Alfred');
+  assert.equal(json.focusProject, 'Alfred');
   assert.equal(json.projects.find(p => p.id === 'songbook-hold').decision.choice, null);
   assert.equal(json.claude.askReady, false);
   assert.deepEqual(h.blocked, []);
+});
+
+test('rejecting an unapproved recommendation closes it without approving work or changing its proposal', async t => {
+  const { h, session } = await setup(); t.after(h.restore);
+  const original = h.repos.Gameshed.issues.find(i => i.number === 4).body;
+  assert.equal((await h.request('/api/workflows/4/reject', { method: 'POST' })).status, 401);
+  assert.equal((await h.request('/api/workflows/4/reject', { method: 'POST', session, headers: { Origin: 'https://evil.example' } })).status, 403);
+  const result = await h.request('/api/workflows/4/reject', { method: 'POST', session, body: {} });
+  assert.equal(result.status, 200);
+  assert.equal(result.json.workflow.status, 'rejected');
+  assert.equal(result.json.workflow.decisionId, null);
+  assert.equal(result.json.workflow.open, false);
+  assert.equal(h.repos.Gameshed.issues.find(i => i.number === 4).body, original);
+  assert.equal(h.comments(4).length, 1);
+  assert.equal((await h.request('/api/workflows/3/reject', { method: 'POST', session, body: {} })).status, 409);
+  assert.equal(h.anthropicCalls.length, 0);
 });
 
 test('approving writes the exact choice event the ChatGPT executor reads', async t => {

@@ -13,6 +13,13 @@ const encoder = new TextEncoder();
 
 const PROJECTS = [
   {
+    id: 'alfred', name: 'Alfred', repo: 'Gameshed', priority: '00 / Finish',
+    status: 'Personal control centre and automatic task execution.',
+    blocker: 'Only a checked execution result establishes that a task finished.',
+    next: 'Finish the mobile experience and verify an approved code change.',
+    question: '', references: [],
+  },
+  {
     id: 'deceivers-audit', name: 'The Deceivers', repo: 'Deceivers', priority: '01 / Release',
     status: 'Six-narrator cast merged on 5 November.',
     blocker: 'The game and narration tests stopped before they ran. The installed Playwright version cannot set up Chromium on the new Ubuntu 26.04 runner.',
@@ -485,6 +492,12 @@ async function workflowState(token, proposal) {
     if (!event) continue;
     const at = comment.created_at ?? null;
     const undecided = ['decision', 'deferred'].includes(state.status);
+    if (undecided && event.type === 'rejected' && workflowText(event.result)) {
+      state.status = 'rejected';
+      state.result = event.result;
+      state.events.push({ type: 'rejected', at, result: event.result });
+      continue;
+    }
     if (undecided && event.type === 'choice') {
       if (event.option === 'defer') {
         state.status = 'deferred';
@@ -531,7 +544,7 @@ async function workflowState(token, proposal) {
 async function workflowQueue(token) {
   const [open, closed] = await Promise.all([
     github(token, WORKFLOW_REPO + '?state=open&sort=updated&per_page=100'),
-    github(token, WORKFLOW_REPO + '?state=closed&sort=updated&per_page=20'),
+    github(token, WORKFLOW_REPO + '?state=closed&sort=updated&per_page=100'),
   ]);
   if (open.length === 100) throw new Error('Workflow list limit reached.');
   const proposals = [...open, ...closed].map(workflowProposal).filter(Boolean);
@@ -570,6 +583,25 @@ async function verifyWorkflow(request, token, number) {
 }
 
 const execution = executor({ github, encryptToken, decryptToken, workflowState, workflowProposal, sha256 });
+
+async function rejectWorkflow(request, token, number) {
+  const issue = await github(token, WORKFLOW_REPO + '/' + number);
+  const proposal = workflowProposal(issue);
+  if (!proposal?.open) return json({ error: 'This decision is no longer open.' }, 409);
+  const current = await workflowState(token, proposal);
+  if (!['decision', 'deferred', 'rejected'].includes(current.status)) {
+    return json({ error: 'Work was already approved. Rejecting a recommendation cannot cancel a running task.' }, 409);
+  }
+  if (current.status !== 'rejected') {
+    await github(token, WORKFLOW_REPO + '/' + number + '/comments', 'POST', {
+      body: WORKFLOW_EVENT + JSON.stringify({ type: 'rejected', result: 'The owner rejected this recommendation in Alfred. No work was approved.' }),
+    });
+  }
+  const recorded = await workflowState(token, proposal);
+  if (recorded.status !== 'rejected') return json({ error: 'The decision changed. Refresh to see the recorded choice.' }, 409);
+  await github(token, WORKFLOW_REPO + '/' + number, 'PATCH', { state: 'closed', state_reason: 'not_planned' });
+  return json({ workflow: { ...recorded, open: false } });
+}
 
 async function chooseWorkflow(request, token, number, env) {
   const input = await request.json().catch(() => null);
@@ -654,7 +686,18 @@ async function workspace(token, env) {
     account: data.account,
     checkedAt: data.checkedAt,
     workflows,
-    projects: data.projects.map(currentProject),
+    focusProject: 'Alfred',
+    projects: data.projects.map(currentProject).map(project => {
+      const related = (workflows ?? []).filter(w => w.project === project.name).sort((a, b) => b.number - a.number);
+      const latest = related.find(w => w.open && ['running', 'checking', 'queued'].includes(w.status)) ?? related[0];
+      const paused = project.id !== 'alfred';
+      return { ...project, paused,
+        status: paused ? 'Paused while Alfred is finished.' : latest
+          ? ({ queued: 'Approved and waiting to start.', running: 'Claude is working.', checking: 'Alfred is checking the result.', verified: 'Latest task passed Alfred’s checks.', completed: 'Latest task finished; review available.', blocked: 'The latest task is blocked.', decision: 'A recommendation is ready.', rejected: 'Recommendation rejected.' }[latest.status] ?? project.status) : project.status,
+        next: paused ? 'Resume after Alfred’s execution loop is proven.' : latest?.status === 'decision' ? latest.options[0].label : project.next,
+        latestWorkflow: latest?.number ?? null,
+      };
+    }),
     claude: {
       askReady: Boolean(env.ANTHROPIC_API_KEY),
       pilot: data.claudePilot.run ?? null,
@@ -1169,6 +1212,11 @@ async function route(request, env, ctx) {
     return token ? chooseWorkflow(request, token, Number(workflowChoice[1]), env) : json({ error: 'Sign in to choose an option.' }, 401);
   }
   const workflowVerify = /^\/api\/workflows\/([1-9][0-9]{0,8})\/verify$/.exec(path);
+  const workflowReject = /^\/api\/workflows\/([1-9][0-9]{0,8})\/reject$/.exec(path);
+  if (workflowReject && isWrite) {
+    const token = await session(request, env);
+    return token ? rejectWorkflow(request, token, Number(workflowReject[1])) : json({ error: 'Sign in to reject a recommendation.' }, 401);
+  }
   if (workflowVerify && isWrite) {
     const token = await session(request, env);
     return token ? verifyWorkflow(request, token, Number(workflowVerify[1])) : json({ error: 'Sign in to check a result.' }, 401);
