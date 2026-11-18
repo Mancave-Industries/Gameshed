@@ -291,7 +291,9 @@ export function executor(helpers) {
         const location = new URL(archive.headers.get('Location') ?? 'https://invalid.test');
         if (archive.status !== 302 || location.hostname !== 'codeload.github.com' || location.protocol !== 'https:' || !location.pathname.startsWith('/' + OWNER + '/' + spec.repo + '/')) throw new Error('Source archive redirect rejected.');
         // Never forward the GitHub credential to the archive host.
-        const downloaded = await fetch(location, { redirect: 'error', signal: AbortSignal.timeout(30000) });
+        // Workers supports manual/follow, not error. Manual plus !ok rejects
+        // another redirect without requesting its destination.
+        const downloaded = await fetch(location, { redirect: 'manual', signal: AbortSignal.timeout(30000) });
         if (!downloaded.ok) throw new Error('Source archive unavailable.');
         return new Response(downloaded.body, { headers: { 'Content-Type': 'application/gzip', 'Cache-Control': 'no-store' } });
       }
@@ -316,6 +318,8 @@ export function executor(helpers) {
         ['The approved issue is no longer open.', 'issue-closed'],
         ['Approved source file is missing, oversized or not a regular text file.', 'source-file-invalid'],
         ['Source may contain a credential; remove it before running.', 'source-credential-detected'],
+        ['Source archive redirect rejected.', 'source-redirect-rejected'],
+        ['Source archive unavailable.', 'source-download-unavailable'],
       ]);
       return response({ error: 'Runner request could not be verified. No automatic retry is authorised.', code: known.get(error?.message) ?? diagnostic + '-failed' }, 403);
     }
