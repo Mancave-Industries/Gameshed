@@ -22,8 +22,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
-      - name: Require the reviewed dashboard revision
-        run: test "$(git rev-parse HEAD^)" = "7fdc6e98dad527221b20dc367065bb71a49e817d"
+          ref: 7fdc6e98dad527221b20dc367065bb71a49e817d
       - name: Install Wrangler
         run: npm install --prefix "$RUNNER_TEMP/alfred-cli" --no-audit --no-fund wrangler@4.158.0
       - name: Publish the isolated review deployment
