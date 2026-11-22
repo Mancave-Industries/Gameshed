@@ -19,6 +19,8 @@ const recentList = $('#recent-list');
 const recentCount = $('#recent-count');
 const projectList = $('#project-list');
 const projectsCount = $('#projects-count');
+const inboxList = $('#inbox-list');
+const inboxCount = $('#inbox-count');
 const homeStatus = $('#home-status');
 const askDialog = $('#ask');
 const thread = $('#thread');
@@ -462,6 +464,31 @@ function projectReport(project) {
     el('p', { class: 'muted small', text: 'Based on Alfred’s records, checked ' + when(data.checkedAt) + '. No model call needed.' }));
 }
 
+
+async function markCapturedDone(id, button) {
+  button.disabled = true;
+  try {
+    await post('/api/brain/items/' + encodeURIComponent(id) + '/done', {});
+    await load(true);
+  } catch (error) {
+    button.disabled = false;
+    $('#capture-status').textContent = error.message;
+    $('#capture-status').classList.add('error');
+  }
+}
+
+function renderInbox() {
+  const items = data?.inbox ?? [];
+  inboxCount.textContent = String(items.length);
+  inboxList.replaceChildren(...(items.length ? items.map(item => {
+    const projectName = data.projects?.find(project => project.id === item.projectId)?.name ?? 'Unsorted';
+    return el('li', { class: 'captured-item' },
+      el('span', { class: 'capture-note', text: item.title }),
+      el('span', { class: 'list-subtitle', text: projectName + ' · ' + when(item.createdAt) }),
+      el('button', { type: 'button', class: 'quiet-button', text: 'Done', onclick: event => markCapturedDone(item.id, event.currentTarget) }));
+  }) : [el('li', { class: 'empty-list', text: 'Nothing captured yet.' })]));
+}
+
 function renderProjects() {
   const projects = data?.projects ?? [];
   projectsCount.textContent = String(projects.length);
@@ -472,7 +499,7 @@ function renderProjects() {
 
 function render(force = true) {
   // An unchanged poll must not detach controls, collapse evidence or lose notes.
-  const signature = JSON.stringify({ workflows: data.workflows, projects: data.projects });
+  const signature = JSON.stringify({ workflows: data.workflows, projects: data.projects, inbox: data.inbox });
   if (!force && signature === renderedData) {
     freshness.textContent = 'Checked ' + timeFormat.format(new Date(data.checkedAt));
     return;
@@ -481,6 +508,7 @@ function render(force = true) {
   renderDoing();
   if (force || !attentionCard.contains(document.activeElement)) renderAttention();
   renderRecent();
+  renderInbox();
   renderProjects();
   refreshConversationCards();
   freshness.textContent = 'Checked ' + timeFormat.format(new Date(data.checkedAt));
@@ -651,6 +679,19 @@ function describeResults() {
     .slice(0, 3);
 }
 
+
+async function saveFromConversation(text, project = false) {
+  try {
+    await post(project ? '/api/brain/projects' : '/api/brain/capture', { title: text });
+    message('alfred', project
+      ? 'Project saved: ' + text + '. Tell me what you need done.'
+      : 'Captured and saved. This has not been sent to Claude or executed.');
+    await load(true);
+  } catch (error) {
+    message('alfred', 'Could not save: ' + error.message);
+  }
+}
+
 function respond(raw) {
   const text = raw.toLowerCase().replace(/[’']/g, "'").trim();
   const current = focus();
@@ -774,7 +815,13 @@ function respond(raw) {
     return;
   }
 
-  offerClaude(raw);
+  const newProject = /^(?:add|create|start)\s+(?:a\s+|new\s+)?project\s+(?:called\s+|named\s+)?(.+)$/i.exec(raw.trim());
+  if (newProject) {
+    saveFromConversation(newProject[1], true);
+    return;
+  }
+  if (isQuestion) offerClaude(raw);
+  else saveFromConversation(raw);
 }
 
 function offerClaude(question) {
@@ -883,6 +930,60 @@ for (const chip of document.querySelectorAll('[data-say]')) {
     respond(chip.dataset.say);
   });
 }
+
+$('#capture-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const field = $('#capture-text');
+  const title = field.value.trim();
+  if (!title || !data) return;
+  const button = $('#capture-form button');
+  const status = $('#capture-status');
+  button.disabled = true;
+  status.classList.remove('error');
+  status.textContent = 'Saving…';
+  try {
+    await post('/api/brain/capture', { title });
+    field.value = '';
+    status.textContent = 'Saved privately in Alfred.';
+    await load(true);
+  } catch (error) {
+    status.classList.add('error');
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('#add-project').addEventListener('click', () => {
+  const form = $('#project-form');
+  form.hidden = !form.hidden;
+  if (!form.hidden) $('#project-name').focus();
+});
+$('#project-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const field = $('#project-name');
+  const title = field.value.trim();
+  if (!title || !data) return;
+  const button = $('#project-form button');
+  const status = $('#project-status');
+  button.disabled = true;
+  status.classList.remove('error');
+  status.textContent = 'Saving…';
+  try {
+    await post('/api/brain/projects', { title });
+    field.value = '';
+    status.textContent = '';
+    $('#project-form').hidden = true;
+    await load(true);
+    announce('Project added: ' + title + '. Capture tasks or ideas to track them.');
+  } catch (error) {
+    status.classList.add('error');
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
 refreshButton.addEventListener('click', () => load(true));
 retry.addEventListener('click', () => load(true));
 $('#open-ask').addEventListener('click', openAsk);

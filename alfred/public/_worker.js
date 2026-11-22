@@ -638,6 +638,51 @@ async function chooseWorkflow(request, token, number, env) {
   return json({ workflow: recorded });
 }
 
+
+// Private notes and projects are stored in D1, not in the public GitHub repository.
+const BRAIN_SCHEMA = "CREATE TABLE IF NOT EXISTS brain_items (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('project','note')), title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', project_id TEXT, status TEXT NOT NULL DEFAULT 'open', created_at TEXT NOT NULL)";
+async function brainRows(env) {
+  await env.ALFRED_DB.prepare(BRAIN_SCHEMA).run();
+  const result = await env.ALFRED_DB.prepare("SELECT id,kind,title,detail,project_id AS projectId,status,created_at AS createdAt FROM brain_items ORDER BY created_at DESC LIMIT 300").all();
+  return result.results ?? [];
+}
+async function captureBrain(request, env, kind) {
+  if (!request.headers.get('Content-Type')?.startsWith('application/json')) return json({ error: 'JSON required.' }, 415);
+  const input = await request.json().catch(() => null);
+  const title = typeof input?.title === 'string' ? input.title.trim() : '';
+  const detail = typeof input?.detail === 'string' ? input.detail.trim() : '';
+  if (!title || title.length > (kind === 'project' ? 100 : 2000) || detail.length > 2000) {
+    return json({ error: 'Enter a project name or note, up to 2,000 characters.' }, 400);
+  }
+  const existing = await brainRows(env);
+  if (kind === 'project' && [...PROJECTS.map(p => p.name), ...existing.filter(p => p.kind === 'project').map(p => p.title)]
+    .some(name => name.toLowerCase() === title.toLowerCase())) return json({ error: 'That project already exists.' }, 409);
+  let projectId = null;
+  if (kind === 'note') {
+    const available = [...PROJECTS.map(p => ({ id: p.id, name: p.name })),
+      ...existing.filter(p => p.kind === 'project' && p.status === 'open').map(p => ({ id: p.id, name: p.title }))];
+    const requested = typeof input.projectId === 'string' ? input.projectId : '';
+    if (requested) {
+      if (!available.some(p => p.id === requested)) return json({ error: 'Choose an existing project.' }, 400);
+      projectId = requested;
+    } else {
+      const match = available.filter(p => title.toLowerCase().includes(p.name.toLowerCase()))
+        .sort((a, b) => b.name.length - a.name.length)[0];
+      projectId = match?.id ?? null;
+    }
+  }
+  const item = { id: crypto.randomUUID(), kind, title, detail, projectId, status: 'open', createdAt: new Date().toISOString() };
+  await env.ALFRED_DB.prepare('INSERT INTO brain_items (id,kind,title,detail,project_id,status,created_at) VALUES (?,?,?,?,?,?,?)')
+    .bind(item.id, item.kind, item.title, item.detail, item.projectId, item.status, item.createdAt).run();
+  return json({ item }, 201);
+}
+async function completeBrain(env, id) {
+  const rows = await brainRows(env);
+  if (!rows.some(row => row.id === id && row.kind === 'note')) return json({ error: 'Note not found.' }, 404);
+  await env.ALFRED_DB.prepare("UPDATE brain_items SET status = 'done' WHERE id = ? AND kind = 'note'").bind(id).run();
+  return json({ id, status: 'done' });
+}
+
 async function dashboard(token, env) {
   const user = await github(token, '/user');
   if (user.id !== OWNER_ID) return json({ error: 'GitHub sign-in is required.' }, 401);
@@ -676,9 +721,10 @@ function currentProject(project) {
 // One read for the conversational workspace: live workflows, project status,
 // earlier project decisions and Claude activity.
 async function workspace(token, env) {
-  const [response, workflows] = await Promise.all([
+  const [response, workflows, brain] = await Promise.all([
     dashboard(token, env),
     workflowQueue(token).catch(() => null),
+    brainRows(env),
   ]);
   if (!response.ok) return response;
   const data = await response.json();
@@ -687,17 +733,27 @@ async function workspace(token, env) {
     checkedAt: data.checkedAt,
     workflows,
     focusProject: 'Alfred',
-    projects: data.projects.map(currentProject).map(project => {
+    projects: [...data.projects.map(currentProject).map(project => {
       const related = (workflows ?? []).filter(w => w.project === project.name).sort((a, b) => b.number - a.number);
       const latest = related.find(w => w.open && ['running', 'checking', 'queued'].includes(w.status)) ?? related[0];
-      const paused = project.id !== 'alfred';
-      return { ...project, paused,
-        status: paused ? 'Paused while Alfred is finished.' : latest
+      return { ...project, paused: false,
+        status: latest
           ? ({ queued: 'Approved and waiting to start.', running: 'Claude is working.', checking: 'Alfred is checking the result.', verified: 'Latest task passed Alfred’s checks.', completed: 'Latest task finished; review available.', blocked: 'The latest task is blocked.', decision: 'A recommendation is ready.', rejected: 'Recommendation rejected.' }[latest.status] ?? project.status) : project.status,
-        next: paused ? 'Resume after Alfred’s execution loop is proven.' : latest?.status === 'decision' ? latest.options[0].label : project.next,
+        next: latest?.status === 'decision' ? latest.options[0].label : project.next,
         latestWorkflow: latest?.number ?? null,
       };
-    }),
+    }), ...brain.filter(item => item.kind === 'project' && item.status === 'open').map(item => {
+      const notes = brain.filter(note => note.kind === 'note' && note.status === 'open' && note.projectId === item.id);
+      return {
+        id: item.id, name: item.title, priority: 'Added by you', question: '', repositoryUrl: null,
+        references: [], activity: 'captured', tasks: [], decision: null, paused: false,
+        status: item.detail || 'Tracked in your private Alfred workspace.',
+        blocker: 'Claude execution is not yet connected to this project.',
+        next: notes[0]?.title ?? 'Capture the next task or idea for this project.',
+        review: null, latestWorkflow: null,
+      };
+    })],
+    inbox: brain.filter(item => item.kind === 'note' && item.status === 'open'),
     claude: {
       askReady: Boolean(env.ANTHROPIC_API_KEY),
       pilot: data.claudePilot.run ?? null,
@@ -1201,6 +1257,16 @@ async function route(request, env, ctx) {
   if (path === '/api/ask' && isWrite) {
     const token = await session(request, env);
     return token ? askAlfred(request, token, env) : json({ error: 'Sign in to ask Alfred.' }, 401);
+  }
+  if ((path === '/api/brain/projects' || path === '/api/brain/capture') && isWrite) {
+    const token = await session(request, env);
+    return token ? captureBrain(request, env, path.endsWith('/projects') ? 'project' : 'note') :
+      json({ error: 'Sign in before saving.' }, 401);
+  }
+  const brainDone = /^\/api\/brain\/items\/([0-9a-f-]{36})\/done$/.exec(path);
+  if (brainDone && isWrite) {
+    const token = await session(request, env);
+    return token ? completeBrain(env, brainDone[1]) : json({ error: 'Sign in before updating.' }, 401);
   }
   if (path === '/api/workflows' && isRead) {
     const token = await session(request, env);
