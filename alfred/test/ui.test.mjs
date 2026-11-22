@@ -55,7 +55,7 @@ const shot = (page, name) => shots
 test('paused project workflows do not appear as current Alfred work', { skip: !playwright }, async t => {
   const { page } = await open(t, { keepWorkflowProjects: true });
   await page.locator('#attention-card').getByText('No decision waiting for you', { exact: true }).waitFor();
-  assert.equal(await page.getByText('Choose the first Biology lesson to review', { exact: true }).count(), 0);
+  assert.equal(await page.locator('#attention-card').getByText('Choose the first Biology lesson to review', { exact: true }).count(), 0);
   await page.locator('#doing-card').getByText('Projects still have work to do', { exact: true }).waitFor();
 });
 
@@ -82,7 +82,7 @@ test('Alfred is the primary decision; reject and project reports do not call a m
   const proposal = JSON.parse(repos.Gameshed.issues[2].body.slice(marker.length));
   proposal.project = 'Alfred';
   repos.Gameshed.issues[2].body = marker + JSON.stringify(proposal);
-  const { h, page } = await open(t, { repos });
+  const { h, page } = await open(t, { repos, keepWorkflowProjects: true });
   assert.equal(await page.locator('#attention-card .focus-card').getAttribute('data-card'), 'wf-4');
   await page.locator('#attention-card').getByRole('button', { name: /Reject:/ }).click();
   await page.locator('#home-status').getByText('Recommendation rejected. No work was approved.').waitFor();
