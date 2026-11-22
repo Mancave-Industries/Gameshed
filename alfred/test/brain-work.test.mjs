@@ -82,3 +82,19 @@ test('unknown Claude outcome locks task rather than silently charging a second a
   assert.equal(second.json.work.status, 'unconfirmed');
   assert.equal(h.anthropicCalls.length, 1);
 });
+
+
+test('stale pending request becomes visibly unconfirmed without triggering another model call', async t => {
+  const h = await createHarness();
+  t.after(h.restore);
+  const session = await h.signIn();
+  const cap = await h.request('/api/brain/capture', { method: 'POST', session, body: { title: 'Make a fresh draft.' } });
+  const id = cap.json.item.id;
+  await h.request('/api/workspace', { session });
+  h.db.prepare("INSERT INTO brain_work (note_id,status,result,next_step,updated_at) VALUES (?,'working','','',?)")
+    .run(id, new Date(Date.now() - 180000).toISOString());
+  const inbox = (await h.request('/api/workspace', { session })).json.inbox;
+  assert.equal(inbox[0].work.status, 'unconfirmed');
+  assert.match(inbox[0].work.nextStep, /Check provider usage/);
+  assert.equal(h.anthropicCalls.length, 0);
+});
