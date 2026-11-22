@@ -483,14 +483,46 @@ async function markCapturedDone(id, button) {
   }
 }
 
+async function doCapturedWork(id, button) {
+  const status = $('#capture-status');
+  const wasDisabled = button?.disabled;
+  if (button) button.disabled = true;
+  status.classList.remove('error');
+  status.textContent = 'Working on this task…';
+  try {
+    const result = await post('/api/brain/items/' + encodeURIComponent(id) + '/work', { confirmCostMicrousd: 30000 });
+    await load(true);
+    status.textContent = result.work?.status === 'ready' ? 'Draft finished. Open the result below.' :
+      result.work?.status === 'blocked' ? 'Blocked — see what is needed below.' :
+        result.work?.status === 'unconfirmed' ? 'Claude did not confirm a result. No automatic retry.' :
+          'Work request recorded.';
+  } catch (error) {
+    status.classList.add('error');
+    status.textContent = error.message;
+  } finally {
+    if (button) button.disabled = Boolean(wasDisabled);
+  }
+}
+
 function renderInbox() {
   const items = data?.inbox ?? [];
   inboxCount.textContent = String(items.length);
   inboxList.replaceChildren(...(items.length ? items.map(item => {
     const projectName = data.projects?.find(project => project.id === item.projectId)?.name ?? 'Unsorted';
+    const work = item.work;
     return el('li', { class: 'captured-item' },
       el('span', { class: 'capture-note', text: item.title }),
       el('span', { class: 'list-subtitle', text: projectName + ' · ' + when(item.createdAt) }),
+      work?.status === 'ready'
+        ? el('details', { class: 'work-result' }, el('summary', { text: 'Draft ready — review result' }),
+          el('p', { class: 'prewrap', text: work.result }),
+          el('p', { class: 'muted small', text: 'Prepared by Claude. No external app, source code or files were changed.' }))
+        : work?.status === 'blocked' || work?.status === 'unconfirmed'
+          ? el('p', { class: 'work-blocker', text: (work.result ? work.result + '\n' : '') + work.nextStep })
+          : work?.status === 'working'
+            ? el('p', { class: 'muted small', text: 'Claude request started; status not confirmed. No automatic retry.' })
+            : el('button', { type: 'button', class: 'button primary', text: 'Work on it · max US$0.03',
+                onclick: event => doCapturedWork(item.id, event.currentTarget) }),
       el('button', { type: 'button', class: 'quiet-button', text: 'Done', onclick: event => markCapturedDone(item.id, event.currentTarget) }));
   }) : [el('li', { class: 'empty-list', text: 'Nothing captured yet.' })]));
 }
@@ -942,21 +974,26 @@ $('#capture-form').addEventListener('submit', async event => {
   const field = $('#capture-text');
   const title = field.value.trim();
   if (!title || !data) return;
-  const button = $('#capture-form button');
+  const buttons = [...$('#capture-form').querySelectorAll('button')];
+  const work = event.submitter?.dataset.mode === 'work';
   const status = $('#capture-status');
-  button.disabled = true;
+  buttons.forEach(button => { button.disabled = true; });
   status.classList.remove('error');
   status.textContent = 'Saving…';
   try {
-    await post('/api/brain/capture', { title });
+    const saved = await post('/api/brain/capture', { title });
     field.value = '';
     status.textContent = 'Saved privately in Alfred.';
-    await load(true);
+    if (work && saved.item?.id) {
+      await doCapturedWork(saved.item.id);
+    } else {
+      await load(true);
+    }
   } catch (error) {
     status.classList.add('error');
     status.textContent = error.message;
   } finally {
-    button.disabled = false;
+    buttons.forEach(button => { button.disabled = false; });
   }
 });
 
