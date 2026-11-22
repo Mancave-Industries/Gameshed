@@ -16,7 +16,7 @@ const PROJECTS = [
     id: 'alfred', name: 'Alfred', repo: 'Gameshed', priority: '00 / Finish',
     status: 'Personal control centre and automatic task execution.',
     blocker: 'Only a checked execution result establishes that a task finished.',
-    next: 'Finish the mobile experience and verify an approved code change.',
+    next: 'Check the end-to-end mobile workflow and close the remaining Alfred defects.',
     question: '', references: [],
   },
   {
