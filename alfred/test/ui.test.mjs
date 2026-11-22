@@ -177,7 +177,15 @@ test('a result can be sent back only with a note', { skip: !playwright }, async 
 });
 
 test('projects and conversation remain available on demand', { skip: !playwright }, async t => {
-  const { page } = await open(t);
+  const { h, page } = await open(t);
+  await page.getByRole('button', { name: 'Update all', exact: true }).click();
+  const all = page.locator('#thread');
+  await all.getByText('All projects — progress report', { exact: true }).waitFor();
+  const allText = await all.textContent();
+  assert.match(allText, /Science Buddy/);
+  assert.match(allText, /Development paused while Alfred is finished\./);
+  assert.equal(h.anthropicCalls.length, 0);
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.locator('#project-list').getByText('Science Buddy', { exact: true }).click();
   await page.getByRole('button', { name: 'Progress report: Science Buddy' }).waitFor();
   await ask(page, 'how is science buddy doing?');

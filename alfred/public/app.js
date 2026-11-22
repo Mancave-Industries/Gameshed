@@ -489,6 +489,17 @@ function projectReport(project) {
     el('p', { class: 'muted small', text: 'Based on Alfred’s records, checked ' + when(data.checkedAt) + '. No model call needed.' }));
 }
 
+function allProjectsReport() {
+  openAsk();
+  const projects = data?.projects ?? [];
+  message('alfred', el('p', { class: 'message-title', text: 'All projects — progress report' }),
+    projects.length ? el('ul', { class: 'compact' }, projects.map(project =>
+      el('li', {}, el('strong', { text: project.name }), el('br'),
+        project.status, el('br'), el('span', { class: 'muted', text: 'Next: ' + project.next }))))
+      : el('p', { text: 'No projects are available.' }),
+    el('p', { class: 'muted small', text: 'Based on Alfred’s records, checked ' + when(data.checkedAt) + '. No model call needed.' }));
+}
+
 
 async function markCapturedDone(id, button) {
   button.disabled = true;
@@ -1024,6 +1035,7 @@ $('#add-project').addEventListener('click', () => {
   form.hidden = !form.hidden;
   if (!form.hidden) $('#project-name').focus();
 });
+$('#all-projects-report').addEventListener('click', allProjectsReport);
 $('#project-form').addEventListener('submit', async event => {
   event.preventDefault();
   const field = $('#project-name');
