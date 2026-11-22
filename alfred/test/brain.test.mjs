@@ -58,3 +58,22 @@ test('existing projects no longer claim to be paused while Alfred is built', asy
   assert.equal(science.paused, false);
   assert.notEqual(science.status, 'Paused while Alfred is finished.');
 });
+
+
+test('existing Panini me capture is organised into a project without the user retyping it', async t => {
+  const h = await createHarness();
+  t.after(h.restore);
+  const session = await h.signIn();
+  await h.request('/api/workspace', { session }); // initialise private table
+  h.db.prepare("INSERT INTO brain_items (id,kind,title,detail,project_id,status,created_at) VALUES (?,'note',?,'',NULL,'open',?)")
+    .run('saved-capture', 'Panini me - last few EFL updates', '2026-11-22T04:14:00.000Z');
+  const workspace = (await h.request('/api/workspace', { session })).json;
+  assert.equal(workspace.inbox.length, 1);
+  assert.equal(workspace.inbox[0].title, 'Panini me - last few EFL updates');
+  const project = workspace.projects.find(item => item.name === 'Panini-Me');
+  assert.ok(project, 'A named project should be created');
+  assert.equal(workspace.inbox[0].projectId, project.id, 'Existing note is filed without losing its text');
+  const again = (await h.request('/api/workspace', { session })).json;
+  assert.equal(again.projects.filter(item => item.name === 'Panini-Me').length, 1, 'No duplicate project on refresh');
+  assert.equal(h.anthropicCalls.length, 0);
+});

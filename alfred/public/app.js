@@ -128,9 +128,14 @@ function pendingChecks() {
     .map(workflow => ({ key: 'wf-' + workflow.number, kind: 'check', workflow }));
 }
 
+function requiresClaude(workflow) {
+  return Boolean(workflow?.options?.find(option => option.id === workflow.choice)?.execution);
+}
+
 function inProgress() {
   return openWorkflows().filter(item =>
-    ['queued', 'running', 'checking', 'blocked', 'verification_failed'].includes(item.status));
+    ['running', 'checking', 'blocked', 'verification_failed'].includes(item.status) ||
+    (item.status === 'queued' && requiresClaude(item)));
 }
 
 function attention() {
@@ -451,12 +456,13 @@ function projectEntry(project) {
 function projectReport(project) {
   openAsk();
   const flows = workflows().filter(w => w.project === project.name).sort((a, b) => b.number - a.number);
-  const active = flows.filter(w => w.open && ['queued', 'running', 'checking'].includes(w.status));
+  const active = flows.filter(w => w.open && (['running', 'checking'].includes(w.status) || (w.status === 'queued' && requiresClaude(w))));
   const blocked = flows.filter(w => w.open && ['blocked', 'verification_failed'].includes(w.status));
   const finished = flows.find(w => ['verified', 'completed'].includes(w.status));
+  const recorded = flows.filter(w => w.status === 'queued' && !requiresClaude(w));
   message('alfred', el('p', { class: 'message-title', text: project.name + ' — progress report' }),
     el('p', { text: project.status }),
-    el('p', { text: active.length ? active.map(w => STATUS[w.status] + ': ' + (optionLabel(w) ?? w.title)).join('\n') : 'Nothing is running for this project.' }),
+    el('p', { text: active.length ? active.map(w => STATUS[w.status] + ': ' + (optionLabel(w) ?? w.title)).join('\n') : (recorded.length ? 'Last decision recorded; no Claude work was requested.' : 'Nothing is running for this project.') }),
     blocked.length ? el('p', { text: 'Blocked: ' + blocked.map(w => w.title).join('; ') }) : null,
     finished ? el('p', { text: 'Latest result: ' + finished.title + '. ' + STATUS[finished.status] + '.' }) : null,
     el('p', { text: 'Next: ' + project.next }),
@@ -548,7 +554,7 @@ async function chooseWorkflow(workflow, option, status, controls) {
     } else if (option.id === 'defer') {
       announce('Saved for later.');
     } else {
-      announce('Approved “' + option.label + '”. Alfred will report back here.');
+      announce(option.execution ? 'Approved “' + option.label + '”. Alfred will report back here.' : 'Recorded “' + option.label + '”. No Claude task was started.');
     }
   } catch (error) {
     status.classList.add('error');
