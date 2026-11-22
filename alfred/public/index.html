@@ -33,7 +33,10 @@
       <form id="capture-form">
         <label for="capture-text" class="visually-hidden">New idea or task</label>
         <textarea id="capture-text" rows="3" maxlength="2000" placeholder="An idea, something to do, a worry, anything…"></textarea>
-        <button type="submit" class="button primary">Capture</button>
+        <div class="capture-actions">
+          <button type="submit" class="button" data-mode="save">Save for later</button>
+          <button type="submit" class="button primary" data-mode="work">Do it · max US$0.03</button>
+        </div>
       </form>
       <p id="capture-status" role="status"></p>
       <details class="drawer" id="inbox-drawer">
