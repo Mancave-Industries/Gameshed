@@ -860,8 +860,12 @@ async function workspace(token, env) {
     workflows,
     focusProject: 'Alfred',
     projects: [...data.projects.map(currentProject).map(project => {
-      const related = (workflows ?? []).filter(w => w.project === project.name).sort((a, b) => b.number - a.number);
+      const related = (workflows ?? []).filter(w => w.open && w.project === project.name).sort((a, b) => b.number - a.number);
       const latest = related.find(w => w.open && ['running', 'checking', 'queued'].includes(w.status)) ?? related[0];
+      if (project.name !== 'Alfred') return { ...project, paused: true,
+        status: 'Development paused while Alfred is finished.',
+        next: 'Waiting for you to resume this project.', latestWorkflow: null,
+      };
       return { ...project, paused: false,
         status: latest
           ? ({ queued: 'Approved and waiting to start.', running: 'Claude is working.', checking: 'Alfred is checking the result.', verified: 'Latest task passed Alfred’s checks.', completed: 'Latest task finished; review available.', blocked: 'The latest task is blocked.', decision: 'A recommendation is ready.', rejected: 'Recommendation rejected.' }[latest.status] ?? project.status) : project.status,
