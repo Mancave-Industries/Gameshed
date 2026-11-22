@@ -60,6 +60,9 @@ test('complete real HTTP path: approve → runner claim → Claude adapter → c
   const completed = state.find(w => w.number === 4);
   assert.equal(completed.status, 'verified');
   assert.match(completed.result, /isolated review branch/);
+  assert.match(completed.result, /loaded the existing approved source files/);
+  assert.match(completed.result, /Changed files: value.js/);
+  assert.match(completed.result, /not independently fact-checked/);
   assert.deepEqual(completed.events.map(e => e.type), ['choice', 'started', 'checking', 'completed', 'verifying', 'verified']);
   const next = state.find(w => w.number > 4);
   assert.equal(next.title, NEXT.title);
