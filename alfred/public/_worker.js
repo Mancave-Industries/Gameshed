@@ -643,7 +643,7 @@ async function chooseWorkflow(request, token, number, env) {
 const BRAIN_SCHEMA = "CREATE TABLE IF NOT EXISTS brain_items (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('project','note')), title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', project_id TEXT, status TEXT NOT NULL DEFAULT 'open', created_at TEXT NOT NULL)";
 function recognisedProject(title) {
   // Recognise established project names, allowing spaces/dashes in dictated notes.
-  if (/^\\s*panini[ -]?me\\s*[-:–—]\\s*\\S/i.test(title)) return 'Panini-Me';
+  if (/^\s*panini[ -]?me\s*[-:–—]\s*\S/i.test(title)) return 'Panini-Me';
   return null;
 }
 async function brainRows(env) {
@@ -656,7 +656,7 @@ async function brainRows(env) {
   const orphaned = items.filter(item => item.kind === 'note' && !item.projectId && item.status === 'open' && recognisedProject(item.title));
   if (orphaned.length) {
     for (const name of [...new Set(orphaned.map(item => recognisedProject(item.title)))]) {
-      let project = items.find(item => item.kind === 'project' && item.title.toLowerCase().replace(/[\\s-]/g, '') === name.toLowerCase().replace(/[\\s-]/g, ''));
+      let project = items.find(item => item.kind === 'project' && item.title.toLowerCase().replace(/[\s-]/g, '') === name.toLowerCase().replace(/[\s-]/g, ''));
       if (!project) {
         const id = crypto.randomUUID();
         await env.ALFRED_DB.prepare(
@@ -694,7 +694,7 @@ async function captureBrain(request, env, kind) {
       projectId = requested;
     } else {
       const hinted = recognisedProject(title);
-      const normalized = value => value.toLowerCase().replace(/[\\s-]/g, '');
+      const normalized = value => value.toLowerCase().replace(/[\s-]/g, '');
       const match = available.filter(p => title.toLowerCase().includes(p.name.toLowerCase()) ||
         (hinted && normalized(p.name) === normalized(hinted)))
         .sort((a, b) => b.name.length - a.name.length)[0];
