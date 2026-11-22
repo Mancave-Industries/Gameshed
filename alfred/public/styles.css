@@ -129,6 +129,7 @@ main {
   letter-spacing: .1em;
   text-transform: uppercase;
 }
+.section-heading .count { margin-left: auto; }
 .count {
   color: var(--muted);
   font-size: .76rem;
