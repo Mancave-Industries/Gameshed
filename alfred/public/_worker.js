@@ -8,7 +8,7 @@ const STATE_COOKIE = '__Host-alfred_oauth';
 const SETUP_COOKIE = '__Host-alfred_github_setup';
 const OAUTH_TTL = 600;
 const SESSION_TTL = 6 * 60 * 60;
-const ASSETS = new Set(['/', '/index.html', '/app.js', '/styles.css']);
+const ASSETS = new Set(['/', '/index.html', '/app.js', '/project-brief.js', '/styles.css']);
 const encoder = new TextEncoder();
 
 const PROJECTS = [

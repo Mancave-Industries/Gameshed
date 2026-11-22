@@ -203,7 +203,17 @@ export function executor(helpers) {
   }
   async function next(token, env, row, output, publication) {
     const snapshot = JSON.parse(row.snapshot);
-    const p = nextProposal(output.nextDecision, snapshot.project, { spec: snapshot.spec, sha: publication.sha });
+    // A generated file always needs an adoption decision, even if the model
+    // omits its optional suggestion. This grants no further model spend.
+    const suggestion = output.nextDecision ?? (output.files.length ? {
+      title: 'Review checked change ' + row.decision_id,
+      summary: 'The approved file change passed its automated checks and is saved on an isolated branch. Decide whether to retain it for release review or request changes. Evidence: ' + publication.url,
+      options: [
+        { id: 'retain-for-review', label: 'Keep for release review', detail: 'Recommended. Retain the checked change for review. This does not merge, deploy or authorise further model calls.' },
+        { id: 'request-revision', label: 'Request changes', detail: 'Record what needs changing before this work can be accepted. A fresh task scope is needed before further execution.' },
+      ],
+    } : null);
+    const p = nextProposal(suggestion, snapshot.project, { spec: snapshot.spec, sha: publication.sha });
     if (!p || row.next_issue) return;
     const issueList = await github(token, ROOT + '?state=all&per_page=100&sort=updated');
     if (issueList.length === 100) throw new Error('Next-decision history requires review.');

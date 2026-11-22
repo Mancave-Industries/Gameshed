@@ -72,6 +72,21 @@ test('complete real HTTP path: approve → runner claim → Claude adapter → c
   assert.deepEqual(h.blocked, []);
 });
 
+test('checked file change publishes one next decision even when the model omits its suggestion', async t => {
+  const { h, session, approve, api } = await setup(t);
+  const id = (await approve()).json.workflow.decisionId;
+  const output = { result: 'Prepared the approved change.', files: [{ path: 'value.js', content: 'export const value = 2;\n' }] };
+  const calls = [];
+  const result = await run({ decisionId: id, api, apiKey: 'fake', provider: provider(output, calls), checkout: '/synthetic', verify: async () => {} });
+  assert.equal(result.status, 'verified');
+  const next = (await h.request('/api/workspace', { session })).json.workflows.find(w => w.title === 'Review checked change ' + id);
+  assert.equal(next.status, 'decision');
+  assert.ok(next.options.every(o => !o.execution));
+  await api('/finish', { decisionId: id, phase: 'result', output, evidence: result.evidence });
+  assert.equal(h.repos.Gameshed.issues.filter(i => i.title === '[Alfred workflow] Review checked change ' + id).length, 1);
+  assert.equal(calls.length, 2);
+});
+
 test('source download uses Worker-supported redirects and never forwards credentials or follows a second redirect', async t => {
   const { h, approve, api } = await setup(t);
   const id = (await approve()).json.workflow.decisionId;
