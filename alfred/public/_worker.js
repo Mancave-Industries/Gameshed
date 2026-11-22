@@ -641,10 +641,37 @@ async function chooseWorkflow(request, token, number, env) {
 
 // Private notes and projects are stored in D1, not in the public GitHub repository.
 const BRAIN_SCHEMA = "CREATE TABLE IF NOT EXISTS brain_items (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('project','note')), title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', project_id TEXT, status TEXT NOT NULL DEFAULT 'open', created_at TEXT NOT NULL)";
+function recognisedProject(title) {
+  // Recognise established project names, allowing spaces/dashes in dictated notes.
+  if (/^\\s*panini[ -]?me\\s*[-:–—]\\s*\\S/i.test(title)) return 'Panini-Me';
+  return null;
+}
 async function brainRows(env) {
   await env.ALFRED_DB.prepare(BRAIN_SCHEMA).run();
-  const result = await env.ALFRED_DB.prepare("SELECT id,kind,title,detail,project_id AS projectId,status,created_at AS createdAt FROM brain_items ORDER BY created_at DESC LIMIT 300").all();
-  return result.results ?? [];
+  const list = async () => (await env.ALFRED_DB.prepare(
+    "SELECT id,kind,title,detail,project_id AS projectId,status,created_at AS createdAt FROM brain_items ORDER BY created_at DESC LIMIT 300"
+  ).all()).results ?? [];
+  let items = await list();
+  // Upgrade older unassigned captures, without rewriting their original wording.
+  const orphaned = items.filter(item => item.kind === 'note' && !item.projectId && item.status === 'open' && recognisedProject(item.title));
+  if (orphaned.length) {
+    for (const name of [...new Set(orphaned.map(item => recognisedProject(item.title)))]) {
+      let project = items.find(item => item.kind === 'project' && item.title.toLowerCase().replace(/[\\s-]/g, '') === name.toLowerCase().replace(/[\\s-]/g, ''));
+      if (!project) {
+        const id = crypto.randomUUID();
+        await env.ALFRED_DB.prepare(
+          "INSERT INTO brain_items (id,kind,title,detail,project_id,status,created_at) VALUES (?,'project',?,'',NULL,'open',?)"
+        ).bind(id, name, new Date().toISOString()).run();
+        project = { id, title: name, kind: 'project' };
+      }
+      for (const note of orphaned.filter(item => recognisedProject(item.title) === name)) {
+        await env.ALFRED_DB.prepare("UPDATE brain_items SET project_id = ? WHERE id = ? AND project_id IS NULL")
+          .bind(project.id, note.id).run();
+      }
+    }
+    items = await list();
+  }
+  return items;
 }
 async function captureBrain(request, env, kind) {
   if (!request.headers.get('Content-Type')?.startsWith('application/json')) return json({ error: 'JSON required.' }, 415);
@@ -666,7 +693,10 @@ async function captureBrain(request, env, kind) {
       if (!available.some(p => p.id === requested)) return json({ error: 'Choose an existing project.' }, 400);
       projectId = requested;
     } else {
-      const match = available.filter(p => title.toLowerCase().includes(p.name.toLowerCase()))
+      const hinted = recognisedProject(title);
+      const normalized = value => value.toLowerCase().replace(/[\\s-]/g, '');
+      const match = available.filter(p => title.toLowerCase().includes(p.name.toLowerCase()) ||
+        (hinted && normalized(p.name) === normalized(hinted)))
         .sort((a, b) => b.name.length - a.name.length)[0];
       projectId = match?.id ?? null;
     }
