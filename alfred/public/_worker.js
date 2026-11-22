@@ -753,7 +753,7 @@ async function workOnBrainItem(request, env, id) {
   }
   // The ChatGPT plugin is NOT a GitHub repository. This Worker has no
   // Plugin Creator credential and must not pretend to have edited it.
-  if (/^panini[ -]?me$/i.test(projectName) && /\b(update|changes?|edits?|fix|publish|release|public|implement|deploy)\b/i.test(note.title)) {
+  if (/^panini[ -]?me$/i.test(projectName) && /\b(updates?|changes?|edits?|fix|publish|release|public|implement|deploy)\b/i.test(note.title)) {
     return finish('blocked',
       'Panini-Me is managed inside ChatGPT. Alfred has not changed its plugin or applied the EFL updates.',
       'Connect an authorised Plugin Creator action to Alfred; the current integration only runs GitHub tasks.');
