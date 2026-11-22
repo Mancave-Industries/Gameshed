@@ -28,6 +28,19 @@
   </section>
 
   <main id="workspace" hidden>
+    <section class="home-section capture-section" aria-labelledby="capture-heading">
+      <h2 id="capture-heading">Get it out of your head</h2>
+      <form id="capture-form">
+        <label for="capture-text" class="visually-hidden">New idea or task</label>
+        <textarea id="capture-text" rows="3" maxlength="2000" placeholder="An idea, something to do, a worry, anything…"></textarea>
+        <button type="submit" class="button primary">Capture</button>
+      </form>
+      <p id="capture-status" role="status"></p>
+      <details class="drawer" id="inbox-drawer">
+        <summary>Captured items <span id="inbox-count" class="count"></span></summary>
+        <ul id="inbox-list" class="drawer-list"></ul>
+      </details>
+    </section>
     <section class="home-section attention-section" aria-labelledby="needs-heading">
       <div class="section-heading">
         <h2 id="needs-heading">Needs me</h2>
@@ -45,7 +58,8 @@
     </section>
 
     <section class="home-section" aria-labelledby="projects-heading">
-      <div class="section-heading"><h2 id="projects-heading">My projects</h2><span id="projects-count" class="count"></span></div>
+      <div class="section-heading"><h2 id="projects-heading">My projects</h2><span id="projects-count" class="count"></span><button id="add-project" class="quiet-button" type="button">+ Add project</button></div>
+      <form id="project-form" hidden><label for="project-name">Project name</label><input id="project-name" maxlength="100" placeholder="e.g. Panini-Me" required><button class="button primary" type="submit">Save project</button><p id="project-status" role="status"></p></form>
       <ul id="project-list" class="drawer-list project-grid"></ul>
     </section>
 
