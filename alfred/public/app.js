@@ -2,6 +2,8 @@
 // The primary experience is: see what is happening, handle one item, move on.
 // Conversation, project records and technical evidence remain available on demand.
 
+import { projectBrief } from './project-brief.js';
+
 const $ = selector => document.querySelector(selector);
 const sessionPanel = $('#session-panel');
 const sessionMessage = $('#session-message');
@@ -348,11 +350,13 @@ function renderDoing() {
   const items = inProgress().filter(w => ['running', 'checking', 'queued'].includes(w.status)).sort((a, b) => rank[a.status] - rank[b.status]);
   doingCount.textContent = items.length > 1 ? String(items.length) : '';
   if (!items.length) {
+    const brief = projectBrief(data);
     doingCard.replaceChildren(el('div', { class: 'doing-card idle' },
       el('span', { class: 'state-dot', 'aria-hidden': 'true' }),
       el('div', {},
-        el('p', { class: 'doing-title', text: 'Nothing is running' }),
-        el('p', { class: 'muted', text: 'Alfred is ready for your next choice.' }))));
+        el('p', { class: 'doing-title', text: brief.headline }),
+        el('p', { class: 'muted', text: brief.progress }),
+        el('p', { text: brief.next }))));
     return;
   }
   const entry = workflow => el('details', { class: 'doing-card ' + workflow.status },
@@ -390,8 +394,8 @@ function renderAttention() {
       el('button', { type: 'button', class: 'button primary-action', text: 'OPEN TASK',
         onclick: () => { $('#inbox-drawer').open = true; $('#inbox-drawer').scrollIntoView({ behavior: 'smooth' }); } }))
     : el('div', { class: 'empty-state' },
-      el('p', { class: 'doing-title', text: 'Nothing needs you' }),
-      el('p', { class: 'muted', text: 'Alfred will put the next real decision here.' })));
+      el('p', { class: 'doing-title', text: 'No decision waiting for you' }),
+      el('p', { class: 'muted', text: projectBrief(data).next })));
   if (items.length > 1) {
     const picker = el('select', { id: 'attention-picker', 'aria-label': 'Choose another item' },
       items.map(item => el('option', { value: item.key, text: item.workflow.project + ' · ' + item.workflow.title })));
@@ -712,7 +716,10 @@ function confirmDecision(item, option) {
 
 function describeNow() {
   const running = inProgress();
-  if (!running.length) return 'Nothing is running right now.';
+  if (!running.length) {
+    const brief = projectBrief(data);
+    return brief.headline + '. ' + brief.progress + '\n' + brief.next;
+  }
   return running.map(item => '• ' + item.project + ': ' +
     (optionLabel(item) ?? item.title) + ' — ' + STATUS[item.status].toLowerCase() + '.').join('\n');
 }
@@ -855,7 +862,7 @@ function respond(raw) {
     return;
   }
   if (/(next|needs? me|for me|waiting|todo|to do|brief|update|summary|^hi\b|^hello|^hey)/.test(text)) {
-    if (!current) message('alfred', 'Nothing needs you right now. ' + describeNow());
+    if (!current) message('alfred', describeNow());
     else message('alfred', current.kind === 'check' ? 'This result needs your check:' : 'This is the next decision:', liveCard(current.key));
     return;
   }

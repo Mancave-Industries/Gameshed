@@ -203,7 +203,17 @@ export function executor(helpers) {
   }
   async function next(token, env, row, output, publication) {
     const snapshot = JSON.parse(row.snapshot);
-    const p = nextProposal(output.nextDecision, snapshot.project, { spec: snapshot.spec, sha: publication.sha });
+    // A generated file always needs an adoption decision, even if the model
+    // omits its optional suggestion. This grants no further model spend.
+    const suggestion = output.nextDecision ?? (output.files.length ? {
+      title: 'Review checked change ' + row.decision_id,
+      summary: 'The approved file change passed its automated checks and is saved on an isolated branch. Decide whether to retain it for release review or request changes. Evidence: ' + publication.url,
+      options: [
+        { id: 'retain-for-review', label: 'Keep for release review', detail: 'Recommended. Retain the checked change for review. This does not merge, deploy or authorise further model calls.' },
+        { id: 'request-revision', label: 'Request changes', detail: 'Record what needs changing before this work can be accepted. A fresh task scope is needed before further execution.' },
+      ],
+    } : null);
+    const p = nextProposal(suggestion, snapshot.project, { spec: snapshot.spec, sha: publication.sha });
     if (!p || row.next_issue) return;
     const issueList = await github(token, ROOT + '?state=all&per_page=100&sort=updated');
     if (issueList.length === 100) throw new Error('Next-decision history requires review.');
@@ -246,7 +256,10 @@ export function executor(helpers) {
       .bind('verifying', JSON.stringify(output), Date.now(), row.decision_id, 'running', 'verifying', Date.now() - 60000).first();
     if (!locked) return response({ error: 'Result delivery is already being checked. Retry delivery after one minute; do not rerun Claude.' }, 409);
     const publication = await publish(token, row, output);
-    const result = (output.result + '\n\nChecked against source ' + snapshot.spec.sha + '. ' +
+    const facts = output.files.length
+      ? 'Verified facts: Alfred loaded the existing approved source files before execution. The original and changed files both passed the approved checks. Changed files: ' + output.files.map(f => f.path).join(', ') + '.\n\nClaude’s findings (not independently fact-checked):\n'
+      : 'Claude’s findings (not independently fact-checked):\n';
+    const result = (facts + output.result + '\n\nChecked against source ' + snapshot.spec.sha + '. ' +
       (snapshot.spec.profile === 'source-review' ? 'Source and report format checked; factual accuracy still needs human review.' : 'The original and changed code passed the approved checks in a network-disabled container. Changes are on an isolated review branch.') +
       '\nEvidence: ' + publication.url + '\nRunner: https://github.com/' + OWNER + '/Gameshed/actions/runs/' + claims.run_id +
       '\nNext: review the result and the suggested next decision in Alfred. Nothing was merged or deployed.').slice(0, 4000);
