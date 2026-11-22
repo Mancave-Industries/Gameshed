@@ -64,3 +64,13 @@ CREATE TABLE IF NOT EXISTS executions (
     published_sha TEXT,
     next_issue INTEGER
 );
+
+-- The user's captured work stays in the private preview database.
+-- Model processing is one-use: even a timeout never silently retries a paid call.
+CREATE TABLE IF NOT EXISTS brain_work (
+    note_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL CHECK (status IN ('working','ready','blocked','unconfirmed')),
+    result TEXT NOT NULL DEFAULT '',
+    next_step TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
+);

@@ -353,6 +353,14 @@ textarea {
 #project-form { padding: .65rem; margin: .25rem 0 .6rem; border: 1px solid var(--line); border-radius: .8rem; }
 .captured-item { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .3rem .7rem; padding: .7rem 0; border-bottom: 1px solid var(--line); }
 .capture-note { grid-column: 1 / -1; overflow-wrap: anywhere; white-space: pre-wrap; }
+.capture-actions { display: grid; grid-template-columns: 1fr 1.35fr; gap: .5rem; }
+.capture-actions .button { font-size: .9rem; white-space: normal; }
+.captured-item > .primary, .work-result, .work-blocker { grid-column: 1 / -1; }
+.work-result { min-width: 0; border: 1px solid var(--line); border-radius: .65rem; padding: .7rem; }
+.work-result > summary { cursor: pointer; font-weight: 700; }
+.work-result > p { margin-top: .6rem; overflow-wrap: anywhere; }
+.work-blocker { color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; }
+
 .captured-item .list-subtitle { color: var(--muted); font-size: .78rem; }
 .captured-item .quiet-button { padding: .3rem .7rem; font-size: .85rem; min-height: 40px; }
 

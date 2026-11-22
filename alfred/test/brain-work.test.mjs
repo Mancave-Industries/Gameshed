@@ -1,0 +1,100 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createHarness } from './harness.mjs';
+
+test('captured work produces a private, saved Claude work product exactly once', async t => {
+  const h = await createHarness({ anthropic: async () => Response.json({
+    content: [{ type: 'text', text: JSON.stringify({ status: 'ready', result: 'Drafted poster copy for the festival.', nextStep: '' }) }],
+    usage: { input_tokens: 500, output_tokens: 100 },
+    stop_reason: 'end_turn',
+  }) });
+  t.after(h.restore);
+  const session = await h.signIn();
+  const capture = await h.request('/api/brain/capture', { method: 'POST', session,
+    body: { title: 'Draft a short poster tagline for a candle market stall' } });
+  assert.equal(capture.status, 201);
+  const id = capture.json.item.id;
+  assert.equal((await h.request('/api/brain/items/' + id + '/work', { method: 'POST', session,
+    body: { confirmCostMicrousd: 1 } })).status, 400, 'No call without the exact cost approval');
+  assert.equal(h.anthropicCalls.length, 0);
+  const worked = await h.request('/api/brain/items/' + id + '/work', { method: 'POST', session,
+    body: { confirmCostMicrousd: 30000 } });
+  assert.equal(worked.status, 200);
+  assert.equal(worked.json.work.status, 'ready');
+  assert.match(worked.json.work.result, /Drafted poster copy/);
+  assert.equal(h.anthropicCalls.length, 1);
+  const inbox = (await h.request('/api/workspace', { session })).json.inbox;
+  assert.equal(inbox[0].work.status, 'ready', 'Saved result persists into workspace');
+  assert.equal(h.db.prepare('SELECT committed_microusd FROM ask_alfred_budget WHERE id=1').get().committed_microusd, 1000);
+  const again = await h.request('/api/brain/items/' + id + '/work', { method: 'POST', session,
+    body: { confirmCostMicrousd: 30000 } });
+  assert.equal(again.json.work.status, 'ready');
+  assert.equal(h.anthropicCalls.length, 1, 'A second click must not spend again');
+  assert.ok(!h.githubLog.some(x => x.startsWith('POST /repos/')), 'User notes and results stay out of public GitHub issues');
+});
+
+test('Panini-Me plugin task reports unsupported external modification without pretending to execute', async t => {
+  const h = await createHarness({ anthropic: async () => { throw new Error('This must never run'); } });
+  t.after(h.restore);
+  const session = await h.signIn();
+  const capture = await h.request('/api/brain/capture', { method: 'POST', session,
+    body: { title: 'Panini me - last few EFL updates' } });
+  const id = capture.json.item.id;
+  const done = await h.request('/api/brain/items/' + id + '/work', { method: 'POST', session,
+    body: { confirmCostMicrousd: 30000 } });
+  assert.equal(done.status, 200);
+  assert.equal(done.json.work.status, 'blocked');
+  assert.match(done.json.work.result, /has not changed/);
+  assert.match(done.json.work.nextStep, /Plugin Creator/);
+  assert.equal(h.anthropicCalls.length, 0);
+  const workspace = (await h.request('/api/workspace', { session })).json;
+  assert.equal(workspace.projects.filter(x => x.name === 'Panini-Me').length, 1);
+  assert.equal(workspace.inbox[0].work.status, 'blocked');
+  assert.equal(workspace.inbox[0].projectId, workspace.projects.find(x => x.name === 'Panini-Me').id);
+});
+
+test('task work requires owner session, same-origin request and exact approval', async t => {
+  const h = await createHarness();
+  t.after(h.restore);
+  const session = await h.signIn();
+  const cap = await h.request('/api/brain/capture', { method: 'POST', session, body: { title: 'Write a greeting.' } });
+  const path = '/api/brain/items/' + cap.json.item.id + '/work';
+  assert.equal((await h.request(path, { method: 'POST', body: { confirmCostMicrousd: 30000 } })).status, 401);
+  assert.equal((await h.request(path, { method: 'POST', session, headers: { Origin: 'https://evil.test' },
+    body: { confirmCostMicrousd: 30000 } })).status, 403);
+  assert.equal((await h.request(path, { method: 'POST', session, body: {} })).status, 400);
+  assert.equal((await h.request('/api/brain/items/00000000-0000-0000-0000-000000000000/work', { method: 'POST', session,
+    body: { confirmCostMicrousd: 30000 } })).status, 404);
+  assert.equal(h.blocked.length, 0);
+});
+
+test('unknown Claude outcome locks task rather than silently charging a second attempt', async t => {
+  const h = await createHarness({ anthropic: async () => { throw new Error('Provider unavailable'); } });
+  t.after(h.restore);
+  const session = await h.signIn();
+  const cap = await h.request('/api/brain/capture', { method: 'POST', session, body: { title: 'Write a greeting.' } });
+  const path = '/api/brain/items/' + cap.json.item.id + '/work';
+  const first = await h.request(path, { method: 'POST', session, body: { confirmCostMicrousd: 30000 } });
+  assert.equal(first.status, 200);
+  assert.equal(first.json.work.status, 'unconfirmed');
+  assert.match(first.json.work.nextStep, /Check usage/);
+  const second = await h.request(path, { method: 'POST', session, body: { confirmCostMicrousd: 30000 } });
+  assert.equal(second.json.work.status, 'unconfirmed');
+  assert.equal(h.anthropicCalls.length, 1);
+});
+
+
+test('stale pending request becomes visibly unconfirmed without triggering another model call', async t => {
+  const h = await createHarness();
+  t.after(h.restore);
+  const session = await h.signIn();
+  const cap = await h.request('/api/brain/capture', { method: 'POST', session, body: { title: 'Make a fresh draft.' } });
+  const id = cap.json.item.id;
+  await h.request('/api/workspace', { session });
+  h.db.prepare("INSERT INTO brain_work (note_id,status,result,next_step,updated_at) VALUES (?,'working','','',?)")
+    .run(id, new Date(Date.now() - 180000).toISOString());
+  const inbox = (await h.request('/api/workspace', { session })).json.inbox;
+  assert.equal(inbox[0].work.status, 'unconfirmed');
+  assert.match(inbox[0].work.nextStep, /Check provider usage/);
+  assert.equal(h.anthropicCalls.length, 0);
+});
