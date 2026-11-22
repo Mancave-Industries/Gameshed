@@ -2,7 +2,7 @@
 // The primary experience is: see what is happening, handle one item, move on.
 // Conversation, project records and technical evidence remain available on demand.
 
-import { projectBrief } from './project-brief.js';
+import { projectBrief, reportSummary } from './project-brief.js';
 
 const $ = selector => document.querySelector(selector);
 const sessionPanel = $('#session-panel');
@@ -271,8 +271,8 @@ function projectDecisionCard(project, preselect) {
 
 function reportPreview(text) {
   const result = text ?? '';
-  if (result.length <= 520) return el('p', { class: 'result-text prewrap', text: result });
-  const short = result.slice(0, 420).replace(/\s+\S*$/, '') + '…';
+  const short = reportSummary(result);
+  if (short === result) return el('p', { class: 'result-text prewrap', text: result });
   return el('div', {},
     el('p', { class: 'result-text prewrap', text: short }),
     el('details', { class: 'evidence' },
@@ -427,7 +427,8 @@ function renderRecent() {
   recentList.replaceChildren(...(recent.length
     ? recent.map(recentEntry)
     : [el('li', { class: 'empty-list', text: 'No activity yet.' })]));
-  const blocked = openWorkflows().filter(w => ['blocked', 'verification_failed'].includes(w.status));
+  const blocked = openWorkflows().filter(w => ['blocked', 'verification_failed'].includes(w.status) &&
+    (!data?.focusProject || w.project === data.focusProject));
   $('#blocked-section').hidden = !blocked.length;
   $('#blocked-count').textContent = String(blocked.length);
   $('#blocked-list').replaceChildren(...blocked.map(recentEntry));
