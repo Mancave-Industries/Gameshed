@@ -175,7 +175,7 @@ test('Later advances the queue and keeps the deferred choice available without r
   await page.locator('#later-section > summary').click();
   await page.locator('#later-list > li > details > summary').click();
   await page.locator('#later-list').getByRole('button', { name: 'Approve: Tighten Osmosis wording first' }).click();
-  await page.getByText('Approved “Tighten Osmosis wording first”. Alfred will report back here.', { exact: true }).waitFor();
+  await page.getByText('Recorded “Tighten Osmosis wording first”. No Claude task was started.', { exact: true }).waitFor();
   assert.match(h.comments(4).at(-1).body, /"option":"tighten-osmosis"/);
 });
 
@@ -253,7 +253,7 @@ test('automatic loop keeps cost, execution, checked result and next decision int
   const { h, page } = await open(t, { repos, execution: true });
   await page.locator('#attention-card').getByText('One model request · US$0.20 maximum', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Approve: Tighten Osmosis wording first · US$0.20 max' }).click();
-  await page.getByText('Approved “Tighten Osmosis wording first”. Alfred will report back here.').waitFor();
+  await page.getByText('Recorded “Tighten Osmosis wording first”. No Claude task was started.').waitFor();
   const decisionId = h.comments(4)[0].id;
   const executorApi = async (path, body) => {
     const response = await h.request('/api/executor' + path, {
