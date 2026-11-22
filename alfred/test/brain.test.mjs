@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHarness } from './harness.mjs';
+import { createHarness, liveFixtures } from './harness.mjs';
 
 test('owner can add a project and capture notes in a private D1 inbox', async t => {
   const h = await createHarness();
@@ -49,14 +49,34 @@ test('capture is owner-only and rejects invalid data', async t => {
   assert.equal((await h.request('/api/brain/capture', { method: 'POST', session, body: { title: 'Note', projectId: 'made-up' } })).status, 400);
 });
 
-test('existing projects no longer claim to be paused while Alfred is built', async t => {
+test('other projects show the owner’s development pause while Alfred stays active', async t => {
   const h = await createHarness();
   t.after(h.restore);
   const session = await h.signIn();
   const res = await h.request('/api/workspace', { session });
   const science = res.json.projects.find(p => p.name === 'Science Buddy');
-  assert.equal(science.paused, false);
-  assert.notEqual(science.status, 'Paused while Alfred is finished.');
+  assert.equal(science.paused, true);
+  assert.equal(science.next, 'Waiting for you to resume this project.');
+  assert.equal(res.json.projects.find(p => p.name === 'Alfred').paused, false);
+});
+
+test('an archived recommendation cannot remain the current Alfred action', async t => {
+  const repos = liveFixtures();
+  const marker = '<!-- alfred-workflow:v1 -->\n';
+  const proposal = JSON.parse(repos.Gameshed.issues[2].body.slice(marker.length));
+  proposal.project = 'Alfred';
+  repos.Gameshed.issues.push({ number: 40, title: '[Alfred workflow] Superseded repair',
+    body: marker + JSON.stringify(proposal), state: 'closed' });
+  const h = await createHarness({ repos });
+  t.after(h.restore);
+  const session = await h.signIn();
+  const res = await h.request('/api/workspace', { session });
+  const alfred = res.json.projects.find(p => p.name === 'Alfred');
+  assert.equal(alfred.latestWorkflow, null);
+  assert.notEqual(alfred.status, 'A recommendation is ready.');
+  assert.notEqual(alfred.next, proposal.options[0].label);
+  assert.equal(res.json.workflows.find(w => w.number === 40).open, false,
+    'Archived evidence remains available in history');
 });
 
 
