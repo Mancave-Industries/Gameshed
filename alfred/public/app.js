@@ -554,7 +554,7 @@ async function chooseWorkflow(workflow, option, status, controls) {
     } else if (option.id === 'defer') {
       announce('Saved for later.');
     } else {
-      announce('Approved “' + option.label + '”. Alfred will report back here.');
+      announce(option.execution ? 'Approved “' + option.label + '”. Alfred will report back here.' : 'Recorded “' + option.label + '”. No Claude task was started.');
     }
   } catch (error) {
     status.classList.add('error');
