@@ -378,10 +378,17 @@ function renderAttention() {
     return;
   }
   const items = attention();
-  waitingCount.textContent = items.length > 1 ? items.length + ' waiting' : '';
+  const captured = (data?.inbox ?? []).filter(item => ['blocked', 'unconfirmed', 'ready'].includes(item.work?.status));
+  waitingCount.textContent = items.length + captured.length > 1 ? (items.length + captured.length) + ' waiting' : '';
   const current = focus();
   attentionCard.replaceChildren(items.length
     ? liveCard(current.key)
+    : captured.length ? el('div', { class: 'focus-card' },
+      el('h3', { text: captured[0].work.status === 'ready' ? 'Work ready to review' : 'Work needs attention' }),
+      el('p', { class: 'summary', text: captured[0].title }),
+      el('p', { class: 'muted small', text: captured[0].work.nextStep || 'Open the result to review what Alfred prepared.' }),
+      el('button', { type: 'button', class: 'button primary-action', text: 'OPEN TASK',
+        onclick: () => { $('#inbox-drawer').open = true; $('#inbox-drawer').scrollIntoView({ behavior: 'smooth' }); } }))
     : el('div', { class: 'empty-state' },
       el('p', { class: 'doing-title', text: 'Nothing needs you' }),
       el('p', { class: 'muted', text: 'Alfred will put the next real decision here.' })));
