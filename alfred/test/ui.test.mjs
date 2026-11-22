@@ -15,7 +15,17 @@ if (shots) mkdirSync(shots, { recursive: true });
 let port = 8790;
 async function open(t, options = {}) {
   const origin = 'http://localhost:' + port++;
-  const h = await createHarness({ origin, ...options });
+  const { keepWorkflowProjects = false, ...harnessOptions } = options;
+  const repos = harnessOptions.repos ?? liveFixtures();
+  const marker = '<!-- alfred-workflow:v1 -->\n';
+  if (!keepWorkflowProjects) {
+    for (const issue of repos.Gameshed.issues.filter(item => item.body?.startsWith(marker))) {
+      const proposal = JSON.parse(issue.body.slice(marker.length));
+      proposal.project = 'Alfred';
+      issue.body = marker + JSON.stringify(proposal);
+    }
+  }
+  const h = await createHarness({ origin, ...harnessOptions, repos });
   const server = await h.serve();
   t.after(async () => { server.close(); h.restore(); });
   const browser = await playwright.chromium.launch({
@@ -34,13 +44,20 @@ async function open(t, options = {}) {
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   await page.goto(origin + '/');
-  await page.locator('#attention-card .focus-card').waitFor();
+  await page.locator('#workspace:not([hidden])').waitFor();
   return { h, page, errors };
 }
 
 const shot = (page, name) => shots
   ? page.screenshot({ path: shots + '/' + name + '.png', fullPage: true })
   : null;
+
+test('paused project workflows do not appear as current Alfred work', { skip: !playwright }, async t => {
+  const { page } = await open(t, { keepWorkflowProjects: true });
+  await page.locator('#attention-card').getByText('No decision waiting for you', { exact: true }).waitFor();
+  assert.equal(await page.getByText('Choose the first Biology lesson to review', { exact: true }).count(), 0);
+  await page.locator('#doing-card').getByText('Projects still have work to do', { exact: true }).waitFor();
+});
 
 test('another decision is reachable without accepting a result; unchanged polls preserve controls', { skip: !playwright }, async t => {
   const { page } = await open(t);

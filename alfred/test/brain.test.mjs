@@ -57,7 +57,9 @@ test('other projects show the owner’s development pause while Alfred stays act
   const science = res.json.projects.find(p => p.name === 'Science Buddy');
   assert.equal(science.paused, true);
   assert.equal(science.next, 'Waiting for you to resume this project.');
-  assert.equal(res.json.projects.find(p => p.name === 'Alfred').paused, false);
+  const alfred = res.json.projects.find(p => p.name === 'Alfred');
+  assert.equal(alfred.paused, false);
+  assert.equal(alfred.next, 'Check the end-to-end mobile workflow and close the remaining Alfred defects.');
 });
 
 test('an archived recommendation cannot remain the current Alfred action', async t => {

@@ -118,14 +118,21 @@ function openWorkflows() {
   return workflows().filter(item => item.open).sort((a, b) => a.number - b.number);
 }
 
+function currentOpenWorkflows() {
+  const current = openWorkflows();
+  return data?.focusProject
+    ? current.filter(item => item.project === data.focusProject)
+    : current;
+}
+
 function pendingDecisions() {
-  return openWorkflows()
+  return currentOpenWorkflows()
     .filter(item => item.status === 'decision')
     .map(workflow => ({ key: 'wf-' + workflow.number, kind: 'workflow', workflow }));
 }
 
 function pendingChecks() {
-  return openWorkflows()
+  return currentOpenWorkflows()
     .filter(item => ['completed', 'verifying'].includes(item.status))
     .map(workflow => ({ key: 'wf-' + workflow.number, kind: 'check', workflow }));
 }
@@ -135,7 +142,7 @@ function requiresClaude(workflow) {
 }
 
 function inProgress() {
-  return openWorkflows().filter(item =>
+  return currentOpenWorkflows().filter(item =>
     ['running', 'checking', 'blocked', 'verification_failed'].includes(item.status) ||
     (item.status === 'queued' && requiresClaude(item)));
 }
@@ -427,13 +434,13 @@ function renderRecent() {
   recentList.replaceChildren(...(recent.length
     ? recent.map(recentEntry)
     : [el('li', { class: 'empty-list', text: 'No activity yet.' })]));
-  const blocked = openWorkflows().filter(w => ['blocked', 'verification_failed'].includes(w.status) &&
+  const blocked = currentOpenWorkflows().filter(w => ['blocked', 'verification_failed'].includes(w.status) &&
     (!data?.focusProject || w.project === data.focusProject));
   $('#blocked-section').hidden = !blocked.length;
   $('#blocked-count').textContent = String(blocked.length);
   $('#blocked-list').replaceChildren(...blocked.map(recentEntry));
   $('#history-list').replaceChildren(...recentWorkflows().filter(w => !w.open || w.status === 'rejected').map(recentEntry));
-  const deferred = openWorkflows().filter(item => item.status === 'deferred');
+  const deferred = currentOpenWorkflows().filter(item => item.status === 'deferred');
   $('#later-section').hidden = !deferred.length;
   $('#later-count').textContent = String(deferred.length);
   $('#later-list').replaceChildren(...deferred.map(workflow => el('li', {},
