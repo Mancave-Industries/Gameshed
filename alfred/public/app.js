@@ -679,6 +679,19 @@ function describeResults() {
     .slice(0, 3);
 }
 
+
+async function saveFromConversation(text, project = false) {
+  try {
+    await post(project ? '/api/brain/projects' : '/api/brain/capture', { title: text });
+    message('alfred', project
+      ? 'Project saved: ' + text + '. Tell me what you need done.'
+      : 'Captured and saved. This has not been sent to Claude or executed.');
+    await load(true);
+  } catch (error) {
+    message('alfred', 'Could not save: ' + error.message);
+  }
+}
+
 function respond(raw) {
   const text = raw.toLowerCase().replace(/[’']/g, "'").trim();
   const current = focus();
@@ -802,7 +815,13 @@ function respond(raw) {
     return;
   }
 
-  offerClaude(raw);
+  const newProject = /^(?:add|create|start)\s+(?:a\s+|new\s+)?project\s+(?:called\s+|named\s+)?(.+)$/i.exec(raw.trim());
+  if (newProject) {
+    saveFromConversation(newProject[1], true);
+    return;
+  }
+  if (isQuestion) offerClaude(raw);
+  else saveFromConversation(raw);
 }
 
 function offerClaude(question) {
