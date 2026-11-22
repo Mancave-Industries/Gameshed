@@ -650,6 +650,11 @@ function recognisedProject(title) {
 async function brainRows(env) {
   await env.ALFRED_DB.prepare(BRAIN_SCHEMA).run();
   await env.ALFRED_DB.prepare(BRAIN_WORK_SCHEMA).run();
+  // A Worker could be interrupted after Claude was called. Never leave a
+  // permanent 'working' state or automatically retry an uncertain charge.
+  await env.ALFRED_DB.prepare(
+    "UPDATE brain_work SET status = 'unconfirmed', next_step = 'Claude did not confirm a result. Check provider usage before any fresh request.', updated_at = ? WHERE status = 'working' AND updated_at < ?"
+  ).bind(new Date().toISOString(), new Date(Date.now() - 90000).toISOString()).run();
   const list = async () => (await env.ALFRED_DB.prepare(
     "SELECT id,kind,title,detail,project_id AS projectId,status,created_at AS createdAt FROM brain_items ORDER BY created_at DESC LIMIT 300"
   ).all()).results ?? [];
