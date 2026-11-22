@@ -141,7 +141,12 @@ test('Ask Alfred stays secondary and typed approval still requires confirmation'
 });
 
 test('a result can be sent back only with a note', { skip: !playwright }, async t => {
-  const { h, page } = await open(t);
+  const repos = liveFixtures();
+  const marker = '<!-- alfred-workflow:v1 -->\n';
+  const proposal = JSON.parse(repos.Gameshed.issues[1].body.slice(marker.length));
+  proposal.project = 'Alfred';
+  repos.Gameshed.issues[1].body = marker + JSON.stringify(proposal);
+  const { h, page } = await open(t, { repos });
   const attention = page.locator('#attention-card');
   await attention.getByRole('button', { name: 'Send back' }).click();
   await attention.getByRole('button', { name: 'Send back with note' }).click();
