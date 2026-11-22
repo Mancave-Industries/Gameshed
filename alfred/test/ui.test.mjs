@@ -123,7 +123,8 @@ test('Other options reveals trade-offs and an alternate choice', { skip: !playwr
   await attention.getByRole('button', { name: 'Choose Test the practical flow first' }).click();
   await page.getByText('Recorded “Test the practical flow first”. No Claude task was started.').waitFor();
   assert.match(h.comments(4).at(-1).body, /"option":"test-osmosis-practical"/);
-  await page.locator('#doing-card').getByText('Nothing is running').waitFor();
+  await page.locator('#doing-card').getByText('Projects still have work to do').waitFor();
+  await page.locator('#doing-card').getByText(/does not mean your projects are finished/).waitFor();
   await shot(page, '3-approved');
 });
 
@@ -170,7 +171,7 @@ test('Later advances the queue and keeps the deferred choice available without r
   await page.locator('#ask').getByRole('button', { name: 'Save for later' }).click();
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.locator('#home-status').getByText('Saved for later.', { exact: true }).waitFor();
-  await page.locator('#attention-card').getByText('Nothing needs you', { exact: true }).waitFor();
+  await page.locator('#attention-card').getByText('No decision waiting for you', { exact: true }).waitFor();
   assert.equal(h.repos['risk-assessment-songbook'].issues[0].body.includes('Answer:'), false);
   await page.locator('#later-section > summary').click();
   await page.locator('#later-list > li > details > summary').click();
