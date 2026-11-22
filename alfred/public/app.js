@@ -110,6 +110,10 @@ function optionLabel(workflow, id = workflow.choice) {
   return workflow.options.find(option => option.id === id)?.label ?? null;
 }
 
+function firstSentence(text = '') {
+  return text.trim().match(/^.*?[.!?](?=\s|$)/)?.[0] ?? text.trim();
+}
+
 function workflows() {
   return data?.workflows ?? [];
 }
@@ -225,7 +229,10 @@ function decisionCard(workflow, preselect) {
     el('div', { class: 'recommendation' },
       el('p', { class: 'recommendation-label', text: preselect ? 'You selected' : 'Alfred recommends' }),
       el('h4', { text: selected.label }),
-      el('p', { text: selected.detail.replace(/^Recommended\.\s*/, '') }),
+      el('p', { class: 'decision-effect', text: firstSentence(workflow.summary) }),
+      el('details', { class: 'evidence' },
+        el('summary', { text: 'Implementation details' }),
+        el('p', { text: selected.detail.replace(/^Recommended\.\s*/, '') })),
       selected.execution ? el('p', { class: 'cost', text: 'One model request · US$' + (selected.execution.maxMicrousd / 1_000_000).toFixed(2) + ' maximum' }) : null,
       executionSummary(selected)),
     workflow.status === 'deferred'
