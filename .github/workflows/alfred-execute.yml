@@ -74,8 +74,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Confirm this exact choice includes an executable grant
+        id: approval
+        run: node alfred/runner/trigger-gate.mjs
       - name: Execute only the exact approved bounded task
+        if: steps.approval.outputs.executable == 'true'
         env:
           ALFRED_ORIGIN: https://review.alfred-control-centre-1395042959.pages.dev
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: node alfred/runner/run.mjs
+      - name: Finish ordinary decisions without starting Claude
+        if: steps.approval.outputs.executable != 'true'
+        run: echo 'No executable grant selected; this workflow ends successfully without inference.'
