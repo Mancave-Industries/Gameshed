@@ -121,9 +121,9 @@ test('Other options reveals trade-offs and an alternate choice', { skip: !playwr
   await attention.getByText('DISCUSS', { exact: true }).click();
   await attention.getByRole('heading', { name: 'Test the practical flow first' }).waitFor();
   await attention.getByRole('button', { name: 'Choose Test the practical flow first' }).click();
-  await page.getByText('Approved “Test the practical flow first”. Alfred will report back here.').waitFor();
+  await page.getByText('Recorded “Test the practical flow first”. No Claude task was started.').waitFor();
   assert.match(h.comments(4).at(-1).body, /"option":"test-osmosis-practical"/);
-  await page.locator('#doing-card').getByText('Science Buddy · Test the practical flow first').waitFor();
+  await page.locator('#doing-card').getByText('Nothing is running').waitFor();
   await shot(page, '3-approved');
 });
 
@@ -135,7 +135,7 @@ test('Ask Alfred stays secondary and typed approval still requires confirmation'
   await dialog.getByText('Confirm this choice:', { exact: true }).waitFor();
   assert.equal(h.comments(4).length, 0, 'typing alone records nothing');
   await dialog.getByRole('button', { name: 'Confirm: Test the practical flow first' }).click();
-  await dialog.getByText('Approved “Test the practical flow first”. Alfred will report back here.').waitFor();
+  await dialog.getByText('Recorded “Test the practical flow first”. No Claude task was started.').waitFor();
   assert.match(h.comments(4).at(-1).body, /"option":"test-osmosis-practical"/);
 });
 
