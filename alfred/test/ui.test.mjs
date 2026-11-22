@@ -253,7 +253,7 @@ test('automatic loop keeps cost, execution, checked result and next decision int
   const { h, page } = await open(t, { repos, execution: true });
   await page.locator('#attention-card').getByText('One model request · US$0.20 maximum', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Approve: Tighten Osmosis wording first · US$0.20 max' }).click();
-  await page.getByText('Recorded “Tighten Osmosis wording first”. No Claude task was started.').waitFor();
+  await page.getByText('Approved “Tighten Osmosis wording first”. Alfred will report back here.').waitFor();
   const decisionId = h.comments(4)[0].id;
   const executorApi = async (path, body) => {
     const response = await h.request('/api/executor' + path, {
