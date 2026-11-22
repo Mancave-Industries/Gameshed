@@ -55,11 +55,12 @@ export async function runnerIdentity(request, env) {
 }
 
 export function executor(helpers) {
-  const { github, encryptToken, decryptToken, workflowState, workflowProposal, sha256 } = helpers;
+  const { github, encryptToken, decryptToken, sessionToken, workflowState, workflowProposal, sha256 } = helpers;
   const db = env => env.ALFRED_DB;
   // A queue snapshot can outlive its OAuth access token. Reuse only an
-  // existing, unexpired owner session; never refresh or extend a spending grant.
-  // This is read-only, including when called by the startup probe.
+  // existing, unexpired owner session. Rotating that session's GitHub token
+  // never extends the separate one-use approval or spending expiry.
+  // This remains read-only when called by the startup probe.
   async function executionToken(env, row) {
     const saved = await decryptToken(env, row.credential, 'execution:' + row.decision_id);
     async function owner(token) {
@@ -70,11 +71,11 @@ export function executor(helpers) {
     try { return await owner(saved); } catch (error) {
       if (error.status !== 401) throw error;
     }
-    const sessions = (await db(env).prepare('SELECT id, token FROM sessions WHERE expires_at > ? ORDER BY expires_at DESC LIMIT 10')
+    const sessions = (await db(env).prepare('SELECT id FROM sessions WHERE expires_at > ? ORDER BY expires_at DESC LIMIT 10')
       .bind(Date.now()).all()).results;
     for (const session of sessions) {
-      const token = await decryptToken(env, session.token, session.id);
-      if (token === saved) continue;
+      const token = await sessionToken(env, session.id);
+      if (!token || token === saved) continue;
       try { return await owner(token); } catch (error) {
         if (error.status !== 401) throw error;
       }

@@ -163,7 +163,8 @@ function fakeGithub(repos, log) {
   };
 }
 
-export async function createHarness({ repos = liveFixtures(), anthropic = null, origin = 'http://localhost:8787', execution = false } = {}) {
+export async function createHarness({ repos = liveFixtures(), anthropic = null, oauthRefresh = null,
+  origin = 'http://localhost:8787', execution = false } = {}) {
   const db = new DatabaseSync(':memory:');
   db.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
   const sessionKey = b64url(webcrypto.getRandomValues(new Uint8Array(32)));
@@ -205,6 +206,11 @@ export async function createHarness({ repos = liveFixtures(), anthropic = null, 
   globalThis.fetch = async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.hostname === 'api.github.com') return github(url, init);
+    if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token' && oauthRefresh) {
+      const form = Object.fromEntries(new URLSearchParams(init.body?.toString()));
+      const result = await oauthRefresh(form);
+      return result instanceof Response ? result : Response.json(result);
+    }
     if (url.hostname === 'token.actions.githubusercontent.com' && execution) return Response.json({ keys: [jwk] });
     if (url.hostname === 'api.anthropic.com' && anthropic) {
       anthropicCalls.push(JSON.parse(init.body));
@@ -214,20 +220,24 @@ export async function createHarness({ repos = liveFixtures(), anthropic = null, 
     throw new Error('Blocked outbound request in test: ' + url.href);
   };
 
-  async function signIn(token = 'ghu_testtoken') {
+  async function signIn(token = 'ghu_testtoken', { expiresAt = Date.now() + 3600_000 } = {}) {
     const sessionId = b64url(webcrypto.getRandomValues(new Uint8Array(32)));
     const id = await sha256(sessionId);
     const key = await webcrypto.subtle.importKey('raw', Buffer.from(sessionKey, 'base64url'), 'AES-GCM', false, ['encrypt']);
     const iv = webcrypto.getRandomValues(new Uint8Array(12));
-    const cipher = await webcrypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode(id) }, key, encoder.encode(token));
-    db.prepare('INSERT INTO sessions (id, token, expires_at) VALUES (?, ?, ?)').run(id, b64url(iv) + '.' + b64url(new Uint8Array(cipher)), Date.now() + 3600_000);
+    const plaintext = typeof token === 'string' ? token : JSON.stringify(token);
+    const cipher = await webcrypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode(id) }, key, encoder.encode(plaintext));
+    db.prepare('INSERT INTO sessions (id, token, expires_at) VALUES (?, ?, ?)').run(id, b64url(iv) + '.' + b64url(new Uint8Array(cipher)), expiresAt);
     return sessionId;
   }
 
-  async function request(path, { method = 'GET', body, session, headers = {} } = {}) {
+  async function request(path, { method = 'GET', body, form, session, headers = {} } = {}) {
     const init = { method, headers: { ...headers } };
     if (session) init.headers.Cookie = '__Host-alfred_session=' + session;
-    if (body !== undefined) {
+    if (form !== undefined) {
+      init.body = new URLSearchParams(form);
+      init.headers['Content-Type'] ??= 'application/x-www-form-urlencoded';
+    } else if (body !== undefined) {
       init.body = JSON.stringify(body);
       init.headers['Content-Type'] ??= 'application/json';
     }

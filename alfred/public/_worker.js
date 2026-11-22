@@ -7,7 +7,11 @@ const SESSION_COOKIE = '__Host-alfred_session';
 const STATE_COOKIE = '__Host-alfred_oauth';
 const SETUP_COOKIE = '__Host-alfred_github_setup';
 const OAUTH_TTL = 600;
-const SESSION_TTL = 6 * 60 * 60;
+const LEGACY_SESSION_TTL = 6 * 60 * 60;
+const BROWSER_SESSION_TTL = 180 * 24 * 60 * 60;
+const CHAT_ACCESS_TTL = 6 * 60 * 60;
+const CHAT_REFRESH_TTL = BROWSER_SESSION_TTL;
+const ACCESS_REFRESH_SKEW = 60_000;
 const ASSETS = new Set(['/', '/index.html', '/app.js', '/project-brief.js', '/styles.css']);
 const encoder = new TextEncoder();
 
@@ -194,6 +198,109 @@ async function decryptToken(env, encrypted, id) {
   return new TextDecoder().decode(result);
 }
 
+function githubCredential(grant, now = Date.now()) {
+  if (!/^ghu_[A-Za-z0-9]+$/.test(grant?.access_token ?? '') ||
+      !Number.isSafeInteger(grant?.expires_in) || grant.expires_in <= 0 || grant.expires_in > 365 * 24 * 60 * 60) return null;
+  const credential = {
+    version: 1,
+    accessToken: grant.access_token,
+    accessExpiresAt: now + grant.expires_in * 1000,
+  };
+  if (grant.refresh_token !== undefined || grant.refresh_token_expires_in !== undefined) {
+    if (!/^ghr_[A-Za-z0-9]+$/.test(grant.refresh_token ?? '') ||
+        !Number.isSafeInteger(grant.refresh_token_expires_in) || grant.refresh_token_expires_in <= 0 ||
+        grant.refresh_token_expires_in > 365 * 24 * 60 * 60) return null;
+    credential.refreshToken = grant.refresh_token;
+    credential.refreshExpiresAt = now + grant.refresh_token_expires_in * 1000;
+  }
+  return credential;
+}
+
+function parseSessionCredential(value) {
+  // Sessions created before refresh support remain valid until their existing
+  // six-hour database expiry. They cannot be extended without another sign-in.
+  if (/^ghu_[A-Za-z0-9]+$/.test(value ?? '')) return { accessToken: value, legacy: true };
+  let credential;
+  try { credential = JSON.parse(value); } catch { return null; }
+  if (credential?.version !== 1 || !/^ghu_[A-Za-z0-9]+$/.test(credential.accessToken ?? '') ||
+      !Number.isSafeInteger(credential.accessExpiresAt)) return null;
+  if (credential.refreshToken !== undefined || credential.refreshExpiresAt !== undefined) {
+    if (!/^ghr_[A-Za-z0-9]+$/.test(credential.refreshToken ?? '') ||
+        !Number.isSafeInteger(credential.refreshExpiresAt)) return null;
+  }
+  return credential;
+}
+
+const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+async function sessionRow(env, id) {
+  return env.ALFRED_DB.prepare('SELECT token, expires_at FROM sessions WHERE id = ? AND expires_at > ?')
+    .bind(id, Date.now()).first();
+}
+
+async function decryptedSession(env, id, row) {
+  if (!row) return null;
+  try { return parseSessionCredential(await decryptToken(env, row.token, id)); } catch { return null; }
+}
+
+async function sessionTokenById(env, id) {
+  if (!validId(id)) return null;
+  const original = await sessionRow(env, id);
+  const credential = await decryptedSession(env, id, original);
+  if (!credential) return null;
+  const now = Date.now();
+  if (credential.legacy || credential.accessExpiresAt > now + ACCESS_REFRESH_SKEW) return credential.accessToken;
+  if (!credential.refreshToken || credential.refreshExpiresAt <= now + ACCESS_REFRESH_SKEW) {
+    return credential.accessExpiresAt > now ? credential.accessToken : null;
+  }
+
+  await env.ALFRED_DB.prepare('DELETE FROM session_refresh_locks WHERE expires_at <= ?').bind(now).run();
+  const lock = await env.ALFRED_DB.prepare(
+    'INSERT INTO session_refresh_locks (id, expires_at) VALUES (?, ?) ON CONFLICT(id) DO NOTHING RETURNING id',
+  ).bind(id, now + 15_000).first();
+  if (!lock) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await wait(100);
+      const latest = await sessionRow(env, id);
+      if (!latest) return null;
+      if (latest.token !== original.token) {
+        const rotated = await decryptedSession(env, id, latest);
+        return rotated?.legacy || rotated?.accessExpiresAt > Date.now() ? rotated.accessToken : null;
+      }
+    }
+    return credential.accessExpiresAt > Date.now() ? credential.accessToken : null;
+  }
+
+  try {
+    const app = await githubApp(env);
+    if (!app) return credential.accessExpiresAt > Date.now() ? credential.accessToken : null;
+    const response = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(8000),
+      headers: { Accept: 'application/json' },
+      body: new URLSearchParams({
+        client_id: app.clientId,
+        client_secret: app.clientSecret,
+        grant_type: 'refresh_token',
+        refresh_token: credential.refreshToken,
+      }),
+    });
+    if (!response.ok) return credential.accessExpiresAt > Date.now() ? credential.accessToken : null;
+    const rotated = githubCredential(await response.json());
+    if (!rotated?.refreshToken) return credential.accessExpiresAt > Date.now() ? credential.accessToken : null;
+    const encrypted = await encryptToken(env, JSON.stringify(rotated), id);
+    const updated = await env.ALFRED_DB.prepare(
+      'UPDATE sessions SET token = ? WHERE id = ? AND token = ? AND expires_at > ? RETURNING id',
+    ).bind(encrypted, id, original.token, Date.now()).first();
+    if (updated) return rotated.accessToken;
+    const latest = await decryptedSession(env, id, await sessionRow(env, id));
+    return latest?.legacy || latest?.accessExpiresAt > Date.now() ? latest.accessToken : null;
+  } catch {
+    return credential.accessExpiresAt > Date.now() ? credential.accessToken : null;
+  } finally {
+    await env.ALFRED_DB.prepare('DELETE FROM session_refresh_locks WHERE id = ?').bind(id).run();
+  }
+}
+
 async function github(token, path, method = 'GET', data) {
   const response = await fetch('https://api.github.com' + path, {
     method, redirect: 'manual', signal: AbortSignal.timeout(8000),
@@ -338,32 +445,30 @@ async function finishLogin(request, env, url, app) {
   });
   if (!response.ok) return redirect('/?sign-in=failed', [clearState]);
   const grant = await response.json();
-  if (!/^ghu_[A-Za-z0-9]+$/.test(grant.access_token) || !(grant.expires_in > 0)) {
-    return redirect('/?sign-in=failed', [clearState]);
-  }
+  const credential = githubCredential(grant);
+  if (!credential) return redirect('/?sign-in=failed', [clearState]);
 
-  const user = await github(grant.access_token, '/user');
+  const user = await github(credential.accessToken, '/user');
   if (user.id !== OWNER_ID) return redirect('/?sign-in=denied', [clearState]);
 
   const sessionId = randomId();
   const id = await sha256(sessionId);
-  const lifetime = Math.min(SESSION_TTL, grant.expires_in);
+  const lifetime = credential.refreshToken
+    ? Math.min(BROWSER_SESSION_TTL, grant.refresh_token_expires_in)
+    : Math.min(LEGACY_SESSION_TTL, grant.expires_in);
   const oldSession = getCookie(request, SESSION_COOKIE);
   if (validId(oldSession)) {
     await env.ALFRED_DB.prepare('DELETE FROM sessions WHERE id = ?').bind(await sha256(oldSession)).run();
   }
   await env.ALFRED_DB.prepare('INSERT INTO sessions (id, token, expires_at) VALUES (?, ?, ?)')
-    .bind(id, await encryptToken(env, grant.access_token, id), Date.now() + lifetime * 1000).run();
+    .bind(id, await encryptToken(env, JSON.stringify(credential), id), Date.now() + lifetime * 1000).run();
   return redirect('/', [clearState, cookie(SESSION_COOKIE, sessionId, lifetime)]);
 }
 
 async function session(request, env) {
   const value = getCookie(request, SESSION_COOKIE);
   if (!validId(value)) return null;
-  const id = await sha256(value);
-  const row = await env.ALFRED_DB.prepare('SELECT token FROM sessions WHERE id = ? AND expires_at > ?')
-    .bind(id, Date.now()).first();
-  return row ? decryptToken(env, row.token, id) : null;
+  return sessionTokenById(env, await sha256(value));
 }
 
 async function signOut(request, env) {
@@ -582,7 +687,8 @@ async function verifyWorkflow(request, token, number) {
   return json({ workflow: await workflowState(token, proposal) });
 }
 
-const execution = executor({ github, encryptToken, decryptToken, workflowState, workflowProposal, sha256 });
+const execution = executor({ github, encryptToken, decryptToken, sessionToken: sessionTokenById,
+  workflowState, workflowProposal, sha256 });
 
 async function rejectWorkflow(request, token, number) {
   const issue = await github(token, WORKFLOW_REPO + '/' + number);
@@ -1216,7 +1322,7 @@ async function chatConnection(request, env, url) {
       issuer: origin,
       authorization_endpoint: origin + '/chat/oauth/authorize',
       token_endpoint: origin + '/chat/oauth/token',
-      response_types_supported: ['code'], grant_types_supported: ['authorization_code'],
+      response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],
       authorization_response_iss_parameter_supported: true,
       client_id_metadata_document_supported: true,
@@ -1247,7 +1353,7 @@ async function chatConnection(request, env, url) {
     ]);
     return htmlPage([
       '<p>Allow ChatGPT to read Alfred project decisions, next steps and Claude run results.</p>',
-      '<p>Read-only access lasts up to six hours or until you sign out of Alfred.</p>',
+      '<p>Read-only access stays connected through secure token rotation for up to six months, or until you sign out of Alfred.</p>',
       '<form action="/chat/oauth/consent" method="post"><input type="hidden" name="consent" value="' + consent + '">',
       '<button class="button primary" type="submit">Allow read-only access</button></form>',
     ].join(''), [], 'Connect Alfred chat');
@@ -1270,20 +1376,53 @@ async function chatConnection(request, env, url) {
 
   if (request.method === 'POST' && path === '/chat/oauth/token') {
     const form = await request.formData().catch(() => null);
-    const code = form?.get('code');
-    const verifier = form?.get('code_verifier');
-    if (form?.get('client_id') !== CHAT_CLIENT || form?.get('redirect_uri') !== CHAT_CALLBACK ||
-        form?.get('grant_type') !== 'authorization_code' || form?.get('resource') !== resource ||
-        !validId(code) || typeof verifier !== 'string' || !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) return oauthError('invalid_request');
-    const access = randomId();
+    const grantType = form?.get('grant_type');
+    const requestedResource = form?.get('resource');
+    if (form?.get('client_id') !== CHAT_CLIENT ||
+        (requestedResource !== null && requestedResource !== resource)) return oauthError('invalid_request');
     const now = Date.now();
-    const grant = await db.prepare(
-      'UPDATE chat_grants SET id = ?, phase = ?, expires_at = ?, state = ?, challenge = ? ' +
-      'WHERE id = ? AND phase = ? AND challenge = ? AND expires_at > ? ' +
-      'AND EXISTS (SELECT 1 FROM sessions WHERE id = chat_grants.session_id AND expires_at > ?) RETURNING id',
-    ).bind(await sha256(access), 'access', now + SESSION_TTL * 1000, '', '', await sha256(code), 'code', await sha256(verifier), now, now).first();
+    let grant;
+    if (grantType === 'authorization_code') {
+      const code = form?.get('code');
+      const verifier = form?.get('code_verifier');
+      if (form?.get('redirect_uri') !== CHAT_CALLBACK || requestedResource !== resource ||
+          !validId(code) || typeof verifier !== 'string' || !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) {
+        return oauthError('invalid_request');
+      }
+      grant = await db.prepare(
+        'DELETE FROM chat_grants WHERE id = ? AND phase = ? AND challenge = ? AND expires_at > ? ' +
+        'AND EXISTS (SELECT 1 FROM sessions WHERE id = chat_grants.session_id AND expires_at > ?) RETURNING session_id',
+      ).bind(await sha256(code), 'code', await sha256(verifier), now, now).first();
+    } else if (grantType === 'refresh_token') {
+      const refresh = form?.get('refresh_token');
+      if (!validId(refresh)) return oauthError('invalid_request');
+      grant = await db.prepare(
+        'DELETE FROM chat_grants WHERE id = ? AND phase = ? AND expires_at > ? ' +
+        'AND EXISTS (SELECT 1 FROM sessions WHERE id = chat_grants.session_id AND expires_at > ?) RETURNING session_id',
+      ).bind(await sha256(refresh), 'refresh', now, now).first();
+    } else {
+      return oauthError('unsupported_grant_type');
+    }
     if (!grant) return oauthError('invalid_grant');
-    return json({ access_token: access, token_type: 'Bearer', scope: CHAT_SCOPE, expires_in: SESSION_TTL });
+
+    const access = randomId();
+    const refresh = randomId();
+    await db.batch([
+      db.prepare("DELETE FROM chat_grants WHERE expires_at <= ? OR (session_id = ? AND phase IN ('access','refresh'))")
+        .bind(now, grant.session_id),
+      db.prepare('INSERT INTO chat_grants (id, session_id, phase, challenge, state, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(await sha256(access), grant.session_id, 'access', '', '', now + CHAT_ACCESS_TTL * 1000),
+      db.prepare('INSERT INTO chat_grants (id, session_id, phase, challenge, state, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(await sha256(refresh), grant.session_id, 'refresh', '', '', now + CHAT_REFRESH_TTL * 1000),
+    ]);
+    return json({
+      access_token: access,
+      token_type: 'Bearer',
+      scope: CHAT_SCOPE,
+      expires_in: CHAT_ACCESS_TTL,
+      refresh_token: refresh,
+      refresh_token_expires_in: CHAT_REFRESH_TTL,
+    });
   }
 
   if (path !== '/mcp') return json({ error: 'Page not found.' }, 404);
@@ -1293,7 +1432,7 @@ async function chatConnection(request, env, url) {
   if (!match) return unauthorized();
   const now = Date.now();
   const grant = await db.prepare(
-    'SELECT sessions.id AS session_id, sessions.token FROM chat_grants JOIN sessions ON sessions.id = chat_grants.session_id ' +
+    'SELECT sessions.id AS session_id FROM chat_grants JOIN sessions ON sessions.id = chat_grants.session_id ' +
     'WHERE chat_grants.id = ? AND phase = ? AND chat_grants.expires_at > ? AND sessions.expires_at > ?',
   ).bind(await sha256(match[1]), 'access', now, now).first();
   if (!grant) return unauthorized();
@@ -1312,7 +1451,8 @@ async function chatConnection(request, env, url) {
     return json({ jsonrpc: '2.0', id: call.id, error: { code: -32601, message: 'Tool not found.' } });
   }
 
-  const token = await decryptToken(env, grant.token, grant.session_id);
+  const token = await sessionTokenById(env, grant.session_id);
+  if (!token) return unauthorized();
   const [dashboardResponse, pilot, workflows] = await Promise.all([
     dashboard(token, env),
     db.prepare('SELECT status, started_at AS startedAt, result FROM claude_pilot WHERE id = 1 AND started_at IS NOT NULL').first(),

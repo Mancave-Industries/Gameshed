@@ -10,6 +10,13 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at INTEGER NOT NULL
 );
 
+-- Refresh rotation is single-use. A short database lock prevents two browser,
+-- runner or ChatGPT requests from spending the same GitHub refresh token.
+CREATE TABLE IF NOT EXISTS session_refresh_locks (
+    id TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS github_app (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     credentials TEXT NOT NULL
