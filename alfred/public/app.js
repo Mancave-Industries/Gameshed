@@ -1042,7 +1042,7 @@ $('#project-form').addEventListener('submit', async event => {
   }
 });
 
-refreshButton.addEventListener('click', () => load(true));
+refreshButton.addEventListener('click', () => location.reload());
 retry.addEventListener('click', () => load(true));
 $('#open-ask').addEventListener('click', openAsk);
 $('#home-composer').addEventListener('submit', event => {
