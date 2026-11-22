@@ -293,3 +293,23 @@ test('automatic loop keeps cost, execution, checked result and next decision int
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await shot(page, '5-automatic-loop');
 });
+
+
+test('iPhone capture + Do it saves and displays a real private Claude draft', { skip: !playwright }, async t => {
+  const { h, page, errors } = await open(t, { anthropic: async () => Response.json({
+    content: [{ type: 'text', text: JSON.stringify({
+      status: 'ready', result: 'Turn ordinary cans into extraordinary Christmas gifts.', nextStep: '',
+    }) }],
+    usage: { input_tokens: 200, output_tokens: 70 }, stop_reason: 'end_turn',
+  }) });
+  await page.locator('#capture-text').fill('Draft an original Christmas candle slogan for MCI');
+  await page.locator('#capture-form').getByRole('button', { name: 'Do it · max US$0.03' }).click();
+  await page.locator('#capture-status').getByText('Draft finished. Open the result below.').waitFor();
+  await page.locator('#inbox-drawer').evaluate(el => { el.open = true; });
+  await page.locator('#inbox-drawer').getByText('Draft an original Christmas candle slogan for MCI').waitFor();
+  await page.getByText('Draft ready — review result').click();
+  await page.getByText('Turn ordinary cans into extraordinary Christmas gifts.').waitFor();
+  assert.equal(h.anthropicCalls.length, 1);
+  assert.equal(h.db.prepare('SELECT status FROM brain_work').get().status, 'ready');
+  assert.deepEqual(errors, []);
+});
