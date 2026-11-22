@@ -125,6 +125,10 @@ test('accepting a result reveals the next decision with three plain actions', { 
   const attention = page.locator('#attention-card');
   await attention.getByRole('heading', { name: 'Choose the next Osmosis readiness step' }).waitFor();
   await attention.getByRole('button', { name: /Approve: Tighten Osmosis wording first/ }).waitFor();
+  await attention.getByText('The Osmosis review is complete.', { exact: true }).waitFor();
+  assert.equal(await attention.getByText(/Prepare a reversible draft-only fix/).isVisible(), false);
+  await attention.getByText('Implementation details', { exact: true }).click();
+  await attention.getByText(/Prepare a reversible draft-only fix/).waitFor();
   await attention.getByText('DISCUSS', { exact: true }).waitFor();
   await attention.getByRole('button', { name: /Reject:/ }).waitFor();
   assert.match(h.comments(3).at(-1).body, /"type":"verified","decisionId":6772342268,"by":"owner"/);
