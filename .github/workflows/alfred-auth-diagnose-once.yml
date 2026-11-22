@@ -1,0 +1,36 @@
+name: Diagnose Alfred sign-in once
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/alfred-auth-diagnose-once.yml']
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    if: github.event.head_commit.message == 'Diagnose Alfred sign-in records once'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    environment: Alfred-preview
+    steps:
+      - name: Read aggregate sign-in records only
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          const root='https://api.cloudflare.com/client/v4/accounts/34c51add54418c2a9d8c38b9be2420e8';
+          async function api(path, body) {
+            const r=await fetch(root+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,'Content-Type':'application/json'},body:body&&JSON.stringify(body)});
+            const j=await r.json(); if(!r.ok||!j.success) throw Error('Cloudflare read failed HTTP '+r.status); return j.result;
+          }
+          const p=await api('/pages/projects/alfred-control-centre-1395042959');
+          const e=p.deployment_configs.preview;
+          console.log(JSON.stringify({origin:e.env_vars.ALFRED_ORIGIN.value,session_key_configured:!!e.env_vars.ALFRED_SESSION_KEY}));
+          const d=(await api('/d1/database?name=alfred-control-centre-1395042959-sessions')).find(x=>x.name==='alfred-control-centre-1395042959-sessions');
+          const now=Date.now();
+          for(const table of ['oauth_attempts','sessions']) {
+            const sql='SELECT COUNT(*) AS total, SUM(CASE WHEN expires_at > ? THEN 1 ELSE 0 END) AS active, MAX(expires_at) AS newest_expiry FROM '+table;
+            const r=await api('/d1/database/'+d.uuid+'/query',{sql,params:[now]});
+            console.log(table+': '+JSON.stringify(r[0].results));
+          }
+          JS
