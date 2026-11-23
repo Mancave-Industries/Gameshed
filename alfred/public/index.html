@@ -33,10 +33,16 @@
       <form id="capture-form">
         <label for="capture-text" class="visually-hidden">New idea or task</label>
         <textarea id="capture-text" rows="3" maxlength="2000" placeholder="An idea, something to do, a worry, anything…"></textarea>
-        <div class="capture-actions">
-          <button type="submit" class="button" data-mode="save">Save for later</button>
-          <button type="submit" class="button primary" data-mode="work">Do it · max US$0.03</button>
+        <button type="button" class="voice-button" data-voice-target="capture-text" aria-pressed="false">Speak instruction</button>
+        <div id="action-preview" class="action-preview" aria-live="polite">
+          <strong>Tell Alfred what you want</strong>
+          <span>Before you send it, Alfred will say whether this creates, builds, checks or only saves.</span>
         </div>
+        <div class="capture-actions">
+          <button type="submit" class="button" data-mode="save">Save only</button>
+          <button type="submit" class="button primary" data-mode="work" id="act-on-it">Act on it</button>
+        </div>
+        <p class="action-boundary">Visuals, drafts and checks finish here. Repository builds use Alfred’s controlled GitHub runner and show branch, tests and evidence.</p>
       </form>
       <p id="capture-status" role="status"></p>
       <details class="drawer" id="inbox-drawer">
@@ -68,7 +74,7 @@
 
     <form id="home-composer" class="home-conversation">
       <label for="home-say">Talk to Alfred</label>
-      <div class="composer"><textarea id="home-say" rows="1" maxlength="800" placeholder="Ask a question or discuss a decision…"></textarea><button class="send" type="submit">Send</button></div>
+      <div class="composer"><textarea id="home-say" rows="1" maxlength="800" placeholder="Ask a question or discuss a decision…"></textarea><button type="button" class="voice-button" data-voice-target="home-say" aria-pressed="false">Speak</button><button class="send" type="submit">Send</button></div>
     </form>
 
     <details id="blocked-section" class="drawer" hidden>
@@ -116,6 +122,7 @@
       <form id="composer" class="composer">
         <label for="say" class="visually-hidden">Message Alfred</label>
         <textarea id="say" rows="1" maxlength="800" placeholder="Ask a question…" enterkeyhint="send" autocomplete="off"></textarea>
+        <button type="button" class="voice-button" data-voice-target="say" aria-pressed="false">Speak</button>
         <button id="send" class="send" type="submit">Send</button>
       </form>
       <form action="/auth/logout" method="post" class="sign-out">
