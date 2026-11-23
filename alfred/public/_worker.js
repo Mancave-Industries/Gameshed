@@ -835,6 +835,49 @@ async function completeBrain(env, id) {
 // never triggers an automatic retry, and no external tool or code mutation is implied.
 const BRAIN_WORK_RESERVATION = 30000; // US$0.03 maximum reservation
 const BRAIN_WORK_MAX_OUTPUT = 1200;
+
+// Models sometimes wrap an otherwise valid JSON object in a Markdown fence or
+// a short introduction. Recover that single object without accepting arbitrary
+// prose as a successful work product. The normal schema checks still run below.
+function parseWorkProduct(raw) {
+  const text = typeof raw === 'string' ? raw.trim() : '';
+  if (!text) return null;
+  try { return JSON.parse(text); } catch {}
+
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text);
+  if (fenced) {
+    try { return JSON.parse(fenced[1]); } catch {}
+  }
+
+  let start = -1;
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') quoted = false;
+      continue;
+    }
+    if (char === '"') {
+      quoted = true;
+      continue;
+    }
+    if (char === '{') {
+      if (depth === 0) start = index;
+      depth += 1;
+    } else if (char === '}' && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        try { return JSON.parse(text.slice(start, index + 1)); } catch { start = -1; }
+      }
+    }
+  }
+  return null;
+}
+
 async function workOnBrainItem(request, env, id) {
   if (!request.headers.get('Content-Type')?.startsWith('application/json')) return json({ error: 'JSON required.' }, 415);
   const input = await request.json().catch(() => null);
@@ -894,8 +937,7 @@ async function workOnBrainItem(request, env, id) {
   const message = await response.json().catch(() => null);
   const raw = Array.isArray(message?.content) ?
     message.content.filter(part => part.type === 'text').map(part => part.text).join('\n').trim() : '';
-  let output;
-  try { output = JSON.parse(raw); } catch { output = null; }
+  const output = parseWorkProduct(raw);
   if (!output || !['ready', 'blocked'].includes(output.status) ||
       typeof output.result !== 'string' || typeof output.nextStep !== 'string' ||
       (output.status === 'ready' && !output.result.trim())) {

@@ -33,6 +33,49 @@ test('captured work produces a private, saved Claude work product exactly once',
   assert.ok(!h.githubLog.some(x => x.startsWith('POST /repos/')), 'User notes and results stay out of public GitHub issues');
 });
 
+test('captured work accepts a valid JSON result wrapped by Claude in Markdown', async t => {
+  const h = await createHarness({ anthropic: async () => Response.json({
+    content: [{ type: 'text', text: 'Here is the completed work:\n```json\n' + JSON.stringify({
+      status: 'ready', result: 'A concise project update.', nextStep: '',
+    }) + '\n```' }],
+    usage: { input_tokens: 200, output_tokens: 60 },
+    stop_reason: 'end_turn',
+  }) });
+  t.after(h.restore);
+  const session = await h.signIn();
+  const capture = await h.request('/api/brain/capture', { method: 'POST', session,
+    body: { title: 'Write a concise project update.' } });
+  const path = '/api/brain/items/' + capture.json.item.id + '/work';
+  const worked = await h.request(path, { method: 'POST', session,
+    body: { confirmCostMicrousd: 30000 } });
+  assert.equal(worked.json.work.status, 'ready');
+  assert.equal(worked.json.work.result, 'A concise project update.');
+  const again = await h.request(path, { method: 'POST', session,
+    body: { confirmCostMicrousd: 30000 } });
+  assert.equal(again.json.work.status, 'ready');
+  assert.equal(h.anthropicCalls.length, 1, 'Recovered output must still be charged and saved only once');
+});
+
+test('invalid model text remains locked and is never submitted twice', async t => {
+  const h = await createHarness({ anthropic: async () => Response.json({
+    content: [{ type: 'text', text: 'I could not produce the requested object.' }],
+    usage: { input_tokens: 100, output_tokens: 20 },
+    stop_reason: 'end_turn',
+  }) });
+  t.after(h.restore);
+  const session = await h.signIn();
+  const capture = await h.request('/api/brain/capture', { method: 'POST', session,
+    body: { title: 'Write a concise project update.' } });
+  const path = '/api/brain/items/' + capture.json.item.id + '/work';
+  const first = await h.request(path, { method: 'POST', session,
+    body: { confirmCostMicrousd: 30000 } });
+  assert.equal(first.json.work.status, 'unconfirmed');
+  const second = await h.request(path, { method: 'POST', session,
+    body: { confirmCostMicrousd: 30000 } });
+  assert.equal(second.json.work.status, 'unconfirmed');
+  assert.equal(h.anthropicCalls.length, 1);
+});
+
 test('Panini-Me plugin task reports unsupported external modification without pretending to execute', async t => {
   const h = await createHarness({ anthropic: async () => { throw new Error('This must never run'); } });
   t.after(h.restore);

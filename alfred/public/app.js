@@ -396,7 +396,10 @@ function renderAttention() {
     return;
   }
   const items = attention();
-  const captured = (data?.inbox ?? []).filter(item => ['blocked', 'unconfirmed', 'ready'].includes(item.work?.status));
+  // An uncertain provider response cannot be retried automatically and has no
+  // owner decision attached to it. Keep it in Captured items for dismissal,
+  // but do not duplicate it as a fresh "Needs me" decision.
+  const captured = (data?.inbox ?? []).filter(item => ['blocked', 'ready'].includes(item.work?.status));
   waitingCount.textContent = items.length + captured.length > 1 ? (items.length + captured.length) + ' waiting' : '';
   const current = focus();
   attentionCard.replaceChildren(items.length
@@ -555,12 +558,14 @@ function renderInbox() {
           el('p', { class: 'prewrap', text: work.result }),
           el('p', { class: 'muted small', text: 'Prepared by Claude. No external app, source code or files were changed.' }))
         : work?.status === 'blocked' || work?.status === 'unconfirmed'
-          ? el('p', { class: 'work-blocker', text: (work.result ? work.result + '\n' : '') + work.nextStep })
+          ? el('p', { class: 'work-blocker', text: (work.result ? work.result + '\n' : '') + work.nextStep +
+              (work.status === 'unconfirmed' ? '\nNo further request will be made automatically. Clear this old failure when you have noted it.' : '') })
           : work?.status === 'working'
             ? el('p', { class: 'muted small', text: 'Claude request started; status not confirmed. No automatic retry.' })
             : el('button', { type: 'button', class: 'button primary', text: 'Work on it · max US$0.03',
                 onclick: event => doCapturedWork(item.id, event.currentTarget) }),
-      el('button', { type: 'button', class: 'quiet-button', text: 'Done', onclick: event => markCapturedDone(item.id, event.currentTarget) }));
+      el('button', { type: 'button', class: 'quiet-button', text: work?.status === 'unconfirmed' ? 'Clear' : 'Done',
+        onclick: event => markCapturedDone(item.id, event.currentTarget) }));
   }) : [el('li', { class: 'empty-list', text: 'Nothing captured yet.' })]));
 }
 
