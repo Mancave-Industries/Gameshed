@@ -28,6 +28,9 @@ const askDialog = $('#ask');
 const thread = $('#thread');
 const composer = $('#composer');
 const say = $('#say');
+const captureText = $('#capture-text');
+const actionPreview = $('#action-preview');
+const actButton = $('#act-on-it');
 
 const POLL_MS = 60_000;
 const signInMessages = {
@@ -112,6 +115,73 @@ function optionLabel(workflow, id = workflow.choice) {
 
 function firstSentence(text = '') {
   return text.trim().match(/^.*?[.!?](?=\s|$)/)?.[0] ?? text.trim();
+}
+
+function instructionMode(raw = '') {
+  const text = raw.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!text) return {
+    kind: 'empty', label: 'Tell Alfred what you want',
+    detail: 'Before you send it, Alfred will say whether this creates, builds, checks or only saves.',
+    button: 'Act on it', cost: '',
+  };
+  if (/\b(mind map|diagram|flowchart|visual|chart|image|poster|graphic)\b/.test(text)) return {
+    kind: 'visual', label: 'CREATE A VISUAL',
+    detail: 'Alfred will create a separate visual file and give you an Open visual link. It will not edit source code.',
+    button: 'Create visual', cost: 'No model charge for Alfred maps.',
+  };
+  if (/\b(build|code|implement|develop|deploy|publish|merge|fix|change|edit|add)\b/.test(text) &&
+      /\b(app|site|website|code|source|repository|repo|feature|bug|preview|plugin|workflow|runner|alfred|ui|ux|screen|button|login|database|api|integration)\b/.test(text)) return {
+    kind: 'build', label: 'BUILD / CHANGE REQUEST',
+    detail: 'This box will record the request, but it cannot silently edit a repository. A real build runs only through Alfred’s controlled GitHub runner with an exact branch, file scope, tests and evidence.',
+    button: 'Record build request', cost: 'No code changes from this box alone.',
+  };
+  if (/\b(check|inspect|review|status|update|report|list|verify|audit|what|where|when|why|how)\b/.test(text)) return {
+    kind: 'check', label: 'CHECK AND REPORT',
+    detail: 'Alfred will inspect the records it can access and return a result. It will not change files.',
+    button: 'Check and report', cost: 'Up to US$0.03 only if a model is needed.',
+  };
+  return {
+    kind: 'create', label: 'CREATE A RESULT',
+    detail: 'Alfred will produce a draft or finished result inside Alfred. It will not change an external app or repository.',
+    button: 'Create result', cost: 'Up to US$0.03.',
+  };
+}
+
+function updateActionPreview() {
+  const mode = instructionMode(captureText.value);
+  actionPreview.dataset.kind = mode.kind;
+  actionPreview.replaceChildren(
+    el('strong', { text: mode.label }),
+    el('span', { text: mode.detail }),
+    mode.cost ? el('small', { text: mode.cost }) : null,
+  );
+  actButton.textContent = mode.button;
+}
+
+function spokenResult(result = '') {
+  const mapMarker = '<!-- alfred-mindmap:v1 -->\n';
+  const localMarker = '<!-- alfred-local:v1 -->\n';
+  if (result.startsWith(mapMarker)) {
+    try {
+      const map = JSON.parse(result.slice(mapMarker.length));
+      return [map.title, ...(map.branches ?? []).flatMap(branch => [branch.title, ...(branch.items ?? [])])].join('. ');
+    } catch { return 'The visual is ready to open.'; }
+  }
+  return result.startsWith(localMarker) ? result.slice(localMarker.length) : result;
+}
+
+function readAloud(text, button) {
+  if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance !== 'function') {
+    button.textContent = 'Read aloud unavailable';
+    button.disabled = true;
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text.slice(0, 5000));
+  utterance.lang = 'en-GB';
+  button.textContent = 'Reading…';
+  utterance.onend = utterance.onerror = () => { button.textContent = 'Read aloud'; };
+  window.speechSynthesis.speak(utterance);
 }
 
 function workflows() {
@@ -524,10 +594,18 @@ async function doCapturedWork(id, button) {
   try {
     const result = await post('/api/brain/items/' + encodeURIComponent(id) + '/work', { confirmCostMicrousd: 30000 });
     await load(true);
-    status.textContent = result.work?.status === 'ready' ? 'Draft finished. Open the result below.' :
+    const visual = result.work?.result?.startsWith('<!-- alfred-mindmap:v1 -->\n');
+    status.textContent = result.work?.status === 'ready' ?
+      (visual ? 'Visual created. Open it below.' : 'Result finished. Open it below.') :
       result.work?.status === 'blocked' ? 'Blocked — see what is needed below.' :
         result.work?.status === 'unconfirmed' ? 'Claude did not confirm a result. No automatic retry.' :
           'Work request recorded.';
+    if (result.work?.status === 'ready') {
+      const drawer = $('#inbox-drawer');
+      drawer.open = true;
+      const item = inboxList.querySelector('[data-capture-id="' + CSS.escape(id) + '"]');
+      item?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
   } catch (error) {
     status.classList.add('error');
     status.textContent = error.message;
@@ -536,24 +614,23 @@ async function doCapturedWork(id, button) {
   }
 }
 
-function renderWorkProduct(result = '') {
+function renderWorkProduct(result = '', id = '') {
   const localMarker = '<!-- alfred-local:v1 -->\n';
   const mapMarker = '<!-- alfred-mindmap:v1 -->\n';
   if (result.startsWith(mapMarker)) {
     let map;
     try { map = JSON.parse(result.slice(mapMarker.length)); } catch { map = null; }
     if (map && typeof map.title === 'string' && Array.isArray(map.branches)) {
-      return { open: true, content: el('div', { class: 'mind-map' },
-        el('div', { class: 'mind-map-root', text: map.title }),
-        el('div', { class: 'mind-map-branches' }, map.branches.slice(0, 8).map(branch =>
-          el('section', { class: 'mind-map-branch' },
-            el('h4', { text: String(branch.title ?? 'Branch') }),
-            el('ul', {}, (Array.isArray(branch.items) ? branch.items : []).slice(0, 12)
-              .map(item => el('li', { text: String(item) }))))))) };
+      const visualUrl = '/deliverables/mind-map/' + encodeURIComponent(id) + '.svg';
+      return { open: true, text: spokenResult(result), content: el('div', { class: 'visual-result' },
+        el('p', { text: 'Your mind map is a separate visual—not a text answer.' }),
+        el('div', { class: 'visual-actions' },
+          el('a', { class: 'button primary', href: visualUrl, target: '_blank', rel: 'noopener', text: 'Open visual ↗' }),
+          el('a', { class: 'button', href: visualUrl, download: 'alfred-mind-map.svg', text: 'Save SVG' }))) };
     }
   }
   const text = result.startsWith(localMarker) ? result.slice(localMarker.length) : result;
-  return { open: result.startsWith(localMarker), content: el('p', { class: 'prewrap', text }) };
+  return { open: result.startsWith(localMarker), text, content: el('p', { class: 'prewrap', text }) };
 }
 
 function renderInbox() {
@@ -562,13 +639,15 @@ function renderInbox() {
   inboxList.replaceChildren(...(items.length ? items.map(item => {
     const projectName = data.projects?.find(project => project.id === item.projectId)?.name ?? 'Unsorted';
     const work = item.work;
-    const rendered = work?.status === 'ready' ? renderWorkProduct(work.result) : null;
-    return el('li', { class: 'captured-item' },
+    const rendered = work?.status === 'ready' ? renderWorkProduct(work.result, item.id) : null;
+    return el('li', { class: 'captured-item', 'data-capture-id': item.id },
       el('span', { class: 'capture-note', text: item.title }),
       el('span', { class: 'list-subtitle', text: projectName + ' · ' + when(item.createdAt) }),
       work?.status === 'ready'
         ? el('details', { class: 'work-result', open: rendered.open }, el('summary', { text: 'Finished — view result' }),
           rendered.content,
+          el('button', { type: 'button', class: 'quiet-button read-aloud', text: 'Read aloud',
+            onclick: event => readAloud(rendered.text, event.currentTarget) }),
           el('p', { class: 'muted small', text: 'Prepared inside Alfred. No external app, source code or files were changed.' }))
         : work?.status === 'blocked' || work?.status === 'unconfirmed'
           ? el('p', { class: 'work-blocker', text: (work.result ? work.result + '\n' : '') + work.nextStep +
@@ -808,7 +887,7 @@ function respond(raw) {
   }
 
   if (/^(help|\?|what can you do)/.test(text)) {
-    message('alfred', 'Ask what is happening, what needs you, what finished, or how a project is doing. You can also say yes, later, looks right, or tell me what needs fixing.');
+    message('alfred', 'I can create visuals and drafts, check live records, and manage decisions here. I can also build repository changes, but only through the controlled GitHub runner with an exact branch, file scope, tests and evidence. The instruction box labels which route it will use before you send.');
     return;
   }
 
@@ -1041,6 +1120,7 @@ $('#capture-form').addEventListener('submit', async event => {
   try {
     const saved = await post('/api/brain/capture', { title });
     field.value = '';
+    updateActionPreview();
     status.textContent = 'Saved privately in Alfred.';
     if (work && saved.item?.id) {
       await doCapturedWork(saved.item.id);
@@ -1054,6 +1134,73 @@ $('#capture-form').addEventListener('submit', async event => {
     buttons.forEach(button => { button.disabled = false; });
   }
 });
+captureText.addEventListener('input', updateActionPreview);
+
+let activeRecognition = null;
+let activeVoiceButton = null;
+
+function finishVoiceButton(button) {
+  button.setAttribute('aria-pressed', 'false');
+  button.textContent = button.dataset.voiceTarget === 'capture-text' ? 'Speak instruction' : 'Speak';
+  if (activeVoiceButton === button) activeVoiceButton = null;
+  activeRecognition = null;
+}
+
+function startVoiceInput(button) {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (typeof Recognition !== 'function') {
+    button.textContent = 'Voice unavailable';
+    button.disabled = true;
+    const status = button.dataset.voiceTarget === 'capture-text' ? $('#capture-status') : homeStatus;
+    status.classList.add('error');
+    status.textContent = 'This browser does not provide speech recognition.';
+    return;
+  }
+  if (activeRecognition && activeVoiceButton === button) {
+    activeRecognition.stop();
+    return;
+  }
+  activeRecognition?.stop();
+  const field = document.getElementById(button.dataset.voiceTarget);
+  if (!field) return;
+  const recognition = new Recognition();
+  activeRecognition = recognition;
+  activeVoiceButton = button;
+  recognition.lang = 'en-GB';
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.onstart = () => {
+    button.setAttribute('aria-pressed', 'true');
+    button.textContent = 'Listening… tap to stop';
+  };
+  recognition.onresult = event => {
+    const words = [];
+    for (let index = 0; index < event.results.length; index += 1) {
+      words.push(event.results[index][0]?.transcript ?? '');
+    }
+    const transcript = words.join(' ').trim();
+    if (transcript) {
+      field.value = transcript;
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  };
+  recognition.onerror = event => {
+    const status = button.dataset.voiceTarget === 'capture-text' ? $('#capture-status') : homeStatus;
+    status.classList.add('error');
+    status.textContent = event.error === 'not-allowed'
+      ? 'Microphone permission was not granted.'
+      : 'I could not hear that. Tap Speak and try again.';
+  };
+  recognition.onend = () => {
+    finishVoiceButton(button);
+    field.focus();
+  };
+  recognition.start();
+}
+
+for (const button of document.querySelectorAll('[data-voice-target]')) {
+  button.addEventListener('click', () => startVoiceInput(button));
+}
 
 $('#add-project').addEventListener('click', () => {
   const form = $('#project-form');
@@ -1106,4 +1253,5 @@ document.addEventListener('visibilitychange', () => {
 setInterval(() => {
   if (document.visibilityState === 'visible' && data && !askDialog.open) load();
 }, POLL_MS);
+updateActionPreview();
 load();
