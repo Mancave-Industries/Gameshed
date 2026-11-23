@@ -69,7 +69,7 @@ test('an uncertain old capture stays dismissible without becoming a new decision
     }),
   });
   await page.fill('#capture-text', 'Prepare a short update');
-  await page.getByRole('button', { name: 'Do it · max US$0.03' }).click();
+  await page.getByRole('button', { name: 'Check and report' }).click();
   await page.getByText('Claude did not confirm a result. No automatic retry.').waitFor();
   await page.locator('#attention-card').getByText('No decision waiting for you', { exact: true }).waitFor();
   await page.locator('#inbox-drawer').getByText('Captured items', { exact: false }).click();
@@ -356,8 +356,9 @@ test('iPhone capture + Do it saves and displays a real private Claude draft', { 
     usage: { input_tokens: 200, output_tokens: 70 }, stop_reason: 'end_turn',
   }) });
   await page.locator('#capture-text').fill('Draft an original Christmas candle slogan for MCI');
-  await page.locator('#capture-form').getByRole('button', { name: 'Do it · max US$0.03' }).click();
-  await page.locator('#capture-status').getByText('Draft finished. Open the result below.').waitFor();
+  await page.locator('#action-preview').getByText('CREATE A RESULT', { exact: true }).waitFor();
+  await page.locator('#capture-form').getByRole('button', { name: 'Create result' }).click();
+  await page.locator('#capture-status').getByText('Result finished. Open it below.').waitFor();
   await page.locator('#inbox-drawer').evaluate(el => { el.open = true; });
   await page.locator('#inbox-drawer').getByText('Draft an original Christmas candle slogan for MCI').waitFor();
   await page.getByText('Finished — view result').click();
@@ -373,11 +374,51 @@ test('iPhone mind-map request becomes a visual result and never a Needs me block
     anthropic: async () => { throw new Error('The local mind map must not call Claude'); },
   });
   await page.locator('#capture-text').fill('Mind map visual for all of this so I can avoid forgetting my ideas');
-  await page.locator('#capture-form').getByRole('button', { name: 'Do it · max US$0.03' }).click();
-  await page.locator('#capture-status').getByText('Draft finished. Open the result below.').waitFor();
+  await page.locator('#action-preview').getByText('CREATE A VISUAL', { exact: true }).waitFor();
+  await page.locator('#capture-form').getByRole('button', { name: 'Create visual' }).click();
+  await page.locator('#capture-status').getByText('Visual created. Open it below.').waitFor();
   await page.locator('#inbox-drawer').evaluate(el => { el.open = true; });
-  await page.locator('.mind-map-root').getByText('Your Alfred map', { exact: true }).waitFor();
-  await page.locator('.mind-map-branch').getByRole('heading', { name: 'Projects', exact: true }).waitFor();
+  const visual = page.getByRole('link', { name: 'Open visual' });
+  await visual.waitFor();
+  assert.equal(await visual.getAttribute('target'), '_blank');
+  const visualResponse = await page.evaluate(async href => {
+    const response = await fetch(href, { credentials: 'same-origin' });
+    return { status: response.status, type: response.headers.get('content-type'), body: await response.text() };
+  }, await visual.getAttribute('href'));
+  assert.equal(visualResponse.status, 200);
+  assert.match(visualResponse.type, /^image\/svg\+xml/);
+  assert.match(visualResponse.body, /<svg/);
+  assert.match(visualResponse.body, /<path/);
+  assert.match(visualResponse.body, /GitHub OAuth and REST API/);
+  await page.locator('#attention-card').getByText('No decision waiting for you', { exact: true }).waitFor();
+  assert.equal(h.anthropicCalls.length, 0);
+  assert.deepEqual(errors, []);
+});
+
+test('the instruction box explains build limits before sending and voice can dictate', { skip: !playwright }, async t => {
+  const { h, page, errors } = await open(t, {
+    keepWorkflowProjects: true,
+    anthropic: async () => { throw new Error('Build capture must not call the text model'); },
+  });
+  await page.evaluate(() => {
+    class FakeRecognition {
+      start() {
+        this.onstart?.();
+        this.onresult?.({ results: [{ 0: { transcript: 'Build a new Alfred voice feature' } }] });
+        this.onend?.();
+      }
+      stop() { this.onend?.(); }
+    }
+    window.webkitSpeechRecognition = FakeRecognition;
+  });
+  await page.getByRole('button', { name: 'Speak instruction' }).click();
+  assert.equal(await page.locator('#capture-text').inputValue(), 'Build a new Alfred voice feature');
+  await page.locator('#action-preview').getByText('BUILD / CHANGE REQUEST', { exact: true }).waitFor();
+  await page.locator('#action-preview').getByText(/cannot silently edit a repository/).waitFor();
+  await page.getByRole('button', { name: 'Record build request' }).click();
+  await page.locator('#capture-status').getByText('Blocked — see what is needed below.').waitFor();
+  await page.locator('#inbox-drawer').evaluate(el => { el.open = true; });
+  await page.getByText(/No repository or external app was changed/).waitFor();
   await page.locator('#attention-card').getByText('No decision waiting for you', { exact: true }).waitFor();
   assert.equal(h.anthropicCalls.length, 0);
   assert.deepEqual(errors, []);
