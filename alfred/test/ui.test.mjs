@@ -59,6 +59,24 @@ test('paused project workflows do not appear as current Alfred work', { skip: !p
   await page.locator('#doing-card').getByText('Projects still have work to do', { exact: true }).waitFor();
 });
 
+test('an uncertain old capture stays dismissible without becoming a new decision', { skip: !playwright }, async t => {
+  const { h, page } = await open(t, {
+    keepWorkflowProjects: true,
+    anthropic: async () => Response.json({
+      content: [{ type: 'text', text: 'not valid JSON' }],
+      usage: { input_tokens: 100, output_tokens: 10 },
+      stop_reason: 'end_turn',
+    }),
+  });
+  await page.fill('#capture-text', 'Prepare a short update');
+  await page.getByRole('button', { name: 'Do it · max US$0.03' }).click();
+  await page.getByText('Claude did not confirm a result. No automatic retry.').waitFor();
+  await page.locator('#attention-card').getByText('No decision waiting for you', { exact: true }).waitFor();
+  await page.locator('#inbox-drawer').getByText('Captured items', { exact: false }).click();
+  await page.locator('#inbox-list').getByRole('button', { name: 'Clear' }).waitFor();
+  assert.equal(h.anthropicCalls.length, 1);
+});
+
 test('another decision is reachable without accepting a result; unchanged polls preserve controls', { skip: !playwright }, async t => {
   const { page } = await open(t);
   const picker = page.getByLabel('Choose another item', { exact: true });
