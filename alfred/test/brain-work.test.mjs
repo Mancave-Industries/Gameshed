@@ -88,6 +88,9 @@ test('project status and architecture requests are delivered locally without ano
   assert.match(status.json.work.result, /Alfred/);
   assert.match(status.json.work.result, /The Deceivers — Development paused/);
 
+  await h.request('/api/brain/capture', { method: 'POST', session,
+    body: { title: '<script>alert("not visual content")</script>' } });
+
   const mapCapture = await h.request('/api/brain/capture', { method: 'POST', session,
     body: { title: 'Present a mind map of all my projects, the architecture and the API connectors' } });
   const map = await h.request('/api/brain/items/' + mapCapture.json.item.id + '/work', { method: 'POST', session,
@@ -97,6 +100,35 @@ test('project status and architecture requests are delivered locally without ano
   assert.match(map.json.work.result, /GitHub OAuth/);
   assert.match(map.json.work.result, /Anthropic Messages API/);
   assert.match(map.json.work.result, /Cloudflare Pages, Workers and D1/);
+  const visualPath = '/deliverables/mind-map/' + mapCapture.json.item.id + '.svg';
+  const signedOutVisual = await h.request(visualPath);
+  assert.equal(signedOutVisual.status, 401, 'Private visual requires the owner session');
+  const visual = await h.request(visualPath, { session });
+  assert.equal(visual.status, 200);
+  assert.match(visual.headers.get('content-type'), /^image\/svg\+xml/);
+  assert.match(visual.headers.get('content-disposition'), /inline; filename="alfred-mind-map\.svg"/);
+  assert.match(visual.text, /<svg/);
+  assert.match(visual.text, /<path/);
+  assert.match(visual.text, /Your Alfred map/);
+  assert.match(visual.text, /GitHub OAuth and REST API/);
+  assert.doesNotMatch(visual.text, /<script>/i);
+  assert.match(visual.text, /&lt;script&gt;/);
+  assert.equal(h.anthropicCalls.length, 0);
+  assert.equal(h.db.prepare('SELECT committed_microusd FROM ask_alfred_budget WHERE id=1').get().committed_microusd, 0);
+});
+
+test('an ordinary build sentence never pretends the text-only capture box changed code', async t => {
+  const h = await createHarness({ anthropic: async () => { throw new Error('A build request must use the runner'); } });
+  t.after(h.restore);
+  const session = await h.signIn();
+  const capture = await h.request('/api/brain/capture', { method: 'POST', session,
+    body: { title: 'Build a new Alfred voice mode feature in the app' } });
+  const worked = await h.request('/api/brain/items/' + capture.json.item.id + '/work', { method: 'POST', session,
+    body: { confirmCostMicrousd: 30000 } });
+  assert.equal(worked.status, 200);
+  assert.equal(worked.json.work.status, 'blocked');
+  assert.match(worked.json.work.result, /No repository or external app was changed/);
+  assert.match(worked.json.work.nextStep, /controlled GitHub runner|GitHub runner/);
   assert.equal(h.anthropicCalls.length, 0);
   assert.equal(h.db.prepare('SELECT committed_microusd FROM ask_alfred_budget WHERE id=1').get().committed_microusd, 0);
 });
