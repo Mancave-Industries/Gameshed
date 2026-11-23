@@ -409,6 +409,7 @@ test('the instruction box explains build limits before sending and voice can dic
       }
       stop() { this.onend?.(); }
     }
+    window.SpeechRecognition = FakeRecognition;
     window.webkitSpeechRecognition = FakeRecognition;
   });
   await page.getByRole('button', { name: 'Speak instruction' }).click();
