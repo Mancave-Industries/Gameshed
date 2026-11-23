@@ -360,7 +360,7 @@ test('iPhone capture + Do it saves and displays a real private Claude draft', { 
   await page.locator('#capture-status').getByText('Draft finished. Open the result below.').waitFor();
   await page.locator('#inbox-drawer').evaluate(el => { el.open = true; });
   await page.locator('#inbox-drawer').getByText('Draft an original Christmas candle slogan for MCI').waitFor();
-  await page.getByText('Draft ready — review result').click();
+  await page.getByText('Finished — view result').click();
   await page.getByText('Turn ordinary cans into extraordinary Christmas gifts.').waitFor();
   assert.equal(h.anthropicCalls.length, 1);
   assert.equal(h.db.prepare('SELECT status FROM brain_work').get().status, 'ready');
