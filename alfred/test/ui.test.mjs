@@ -360,9 +360,25 @@ test('iPhone capture + Do it saves and displays a real private Claude draft', { 
   await page.locator('#capture-status').getByText('Draft finished. Open the result below.').waitFor();
   await page.locator('#inbox-drawer').evaluate(el => { el.open = true; });
   await page.locator('#inbox-drawer').getByText('Draft an original Christmas candle slogan for MCI').waitFor();
-  await page.getByText('Draft ready — review result').click();
+  await page.getByText('Finished — view result').click();
   await page.getByText('Turn ordinary cans into extraordinary Christmas gifts.').waitFor();
   assert.equal(h.anthropicCalls.length, 1);
   assert.equal(h.db.prepare('SELECT status FROM brain_work').get().status, 'ready');
+  assert.deepEqual(errors, []);
+});
+
+test('iPhone mind-map request becomes a visual result and never a Needs me blocker', { skip: !playwright }, async t => {
+  const { h, page, errors } = await open(t, {
+    keepWorkflowProjects: true,
+    anthropic: async () => { throw new Error('The local mind map must not call Claude'); },
+  });
+  await page.locator('#capture-text').fill('Mind map visual for all of this so I can avoid forgetting my ideas');
+  await page.locator('#capture-form').getByRole('button', { name: 'Do it · max US$0.03' }).click();
+  await page.locator('#capture-status').getByText('Draft finished. Open the result below.').waitFor();
+  await page.locator('#inbox-drawer').evaluate(el => { el.open = true; });
+  await page.locator('.mind-map-root').getByText('Your Alfred map', { exact: true }).waitFor();
+  await page.locator('.mind-map-branch').getByRole('heading', { name: 'Projects', exact: true }).waitFor();
+  await page.locator('#attention-card').getByText('No decision waiting for you', { exact: true }).waitFor();
+  assert.equal(h.anthropicCalls.length, 0);
   assert.deepEqual(errors, []);
 });

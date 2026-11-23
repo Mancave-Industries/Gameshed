@@ -361,6 +361,16 @@ textarea {
 .work-result > summary { cursor: pointer; font-weight: 700; }
 .work-result > p { margin-top: .6rem; overflow-wrap: anywhere; }
 .work-blocker { color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; }
+.mind-map { display: grid; gap: .7rem; margin-top: .7rem; }
+.mind-map-root {
+  padding: .65rem .8rem; border-radius: .7rem; text-align: center;
+  background: var(--approval); color: #07150e; font-weight: 850;
+}
+.mind-map-branches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+.mind-map-branch { min-width: 0; padding: .65rem; border: 1px solid var(--line); border-radius: .65rem; background: var(--panel); }
+.mind-map-branch h4 { margin-bottom: .4rem; color: var(--accent); font-size: .82rem; }
+.mind-map-branch ul { margin: 0; padding-left: 1rem; display: grid; gap: .25rem; }
+.mind-map-branch li { overflow-wrap: anywhere; font-size: .76rem; line-height: 1.35; }
 
 .captured-item .list-subtitle { color: var(--muted); font-size: .78rem; }
 .captured-item .quiet-button { padding: .3rem .7rem; font-size: .85rem; min-height: 40px; }

@@ -76,6 +76,59 @@ test('invalid model text remains locked and is never submitted twice', async t =
   assert.equal(h.anthropicCalls.length, 1);
 });
 
+test('project status and architecture requests are delivered locally without another model call', async t => {
+  const h = await createHarness({ anthropic: async () => { throw new Error('Local work must not call Claude'); } });
+  t.after(h.restore);
+  const session = await h.signIn();
+  const statusCapture = await h.request('/api/brain/capture', { method: 'POST', session,
+    body: { title: 'List my projects and their status' } });
+  const status = await h.request('/api/brain/items/' + statusCapture.json.item.id + '/work', { method: 'POST', session,
+    body: { confirmCostMicrousd: 30000 } });
+  assert.equal(status.json.work.status, 'ready');
+  assert.match(status.json.work.result, /Alfred/);
+  assert.match(status.json.work.result, /The Deceivers — Development paused/);
+
+  const mapCapture = await h.request('/api/brain/capture', { method: 'POST', session,
+    body: { title: 'Present a mind map of all my projects, the architecture and the API connectors' } });
+  const map = await h.request('/api/brain/items/' + mapCapture.json.item.id + '/work', { method: 'POST', session,
+    body: { confirmCostMicrousd: 30000 } });
+  assert.equal(map.json.work.status, 'ready');
+  assert.match(map.json.work.result, /alfred-mindmap:v1/);
+  assert.match(map.json.work.result, /GitHub OAuth/);
+  assert.match(map.json.work.result, /Anthropic Messages API/);
+  assert.match(map.json.work.result, /Cloudflare Pages, Workers and D1/);
+  assert.equal(h.anthropicCalls.length, 0);
+  assert.equal(h.db.prepare('SELECT committed_microusd FROM ask_alfred_budget WHERE id=1').get().committed_microusd, 0);
+});
+
+test('existing failed status and mind-map captures recover on refresh without inference', async t => {
+  const h = await createHarness({ anthropic: async () => { throw new Error('Recovery must not call Claude'); } });
+  t.after(h.restore);
+  const session = await h.signIn();
+  await h.request('/api/workspace', { session });
+  const now = new Date().toISOString();
+  for (const [id, title] of [
+    ['failed-status', 'List my projects and their status'],
+    ['failed-map', 'I need you to present a mind map of all my projects all of the architecture and the api connectors etc'],
+  ]) {
+    h.db.prepare("INSERT INTO brain_items (id,kind,title,detail,project_id,status,created_at) VALUES (?,'note',?,'',NULL,'open',?)")
+      .run(id, title, now);
+    h.db.prepare("INSERT INTO brain_work (note_id,status,result,next_step,updated_at) VALUES (?,'unconfirmed','','Claude returned no valid work product.',?)")
+      .run(id, now);
+  }
+  h.db.prepare("INSERT INTO brain_items (id,kind,title,detail,project_id,status,created_at) VALUES (?,'note',?,'',NULL,'open',?)")
+    .run('blocked-map', 'Mind map visual for all of this so I can avoid forgetting my ideas', now);
+  h.db.prepare("INSERT INTO brain_work (note_id,status,result,next_step,updated_at) VALUES (?,'blocked',?,?,?)")
+    .run('blocked-map', '', 'Share the ideas or content you want organised.', now);
+  const inbox = (await h.request('/api/workspace', { session })).json.inbox;
+  assert.equal(inbox.length, 3);
+  assert.ok(inbox.every(item => item.work.status === 'ready'));
+  assert.match(inbox.find(item => item.id === 'failed-status').work.result, /Science Buddy/);
+  assert.match(inbox.find(item => item.id === 'failed-map').work.result, /GitHub Actions OIDC/);
+  assert.match(inbox.find(item => item.id === 'blocked-map').work.result, /alfred-mindmap:v1/);
+  assert.equal(h.anthropicCalls.length, 0);
+});
+
 test('Panini-Me plugin task reports unsupported external modification without pretending to execute', async t => {
   const h = await createHarness({ anthropic: async () => { throw new Error('This must never run'); } });
   t.after(h.restore);

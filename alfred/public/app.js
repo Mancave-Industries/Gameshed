@@ -396,20 +396,12 @@ function renderAttention() {
     return;
   }
   const items = attention();
-  // An uncertain provider response cannot be retried automatically and has no
-  // owner decision attached to it. Keep it in Captured items for dismissal,
-  // but do not duplicate it as a fresh "Needs me" decision.
-  const captured = (data?.inbox ?? []).filter(item => ['blocked', 'ready'].includes(item.work?.status));
-  waitingCount.textContent = items.length + captured.length > 1 ? (items.length + captured.length) + ' waiting' : '';
+  // Captured work belongs in Captured items. "Needs me" is reserved for a real
+  // owner decision or result check, never a new idea or a blocked draft.
+  waitingCount.textContent = items.length > 1 ? items.length + ' waiting' : '';
   const current = focus();
   attentionCard.replaceChildren(items.length
     ? liveCard(current.key)
-    : captured.length ? el('div', { class: 'focus-card' },
-      el('h3', { text: captured[0].work.status === 'ready' ? 'Work ready to review' : 'Work needs attention' }),
-      el('p', { class: 'summary', text: captured[0].title }),
-      el('p', { class: 'muted small', text: captured[0].work.nextStep || 'Open the result to review what Alfred prepared.' }),
-      el('button', { type: 'button', class: 'button primary-action', text: 'OPEN TASK',
-        onclick: () => { $('#inbox-drawer').open = true; $('#inbox-drawer').scrollIntoView({ behavior: 'smooth' }); } }))
     : el('div', { class: 'empty-state' },
       el('p', { class: 'doing-title', text: 'No decision waiting for you' }),
       el('p', { class: 'muted', text: projectBrief(data).next })));
@@ -544,19 +536,40 @@ async function doCapturedWork(id, button) {
   }
 }
 
+function renderWorkProduct(result = '') {
+  const localMarker = '<!-- alfred-local:v1 -->\n';
+  const mapMarker = '<!-- alfred-mindmap:v1 -->\n';
+  if (result.startsWith(mapMarker)) {
+    let map;
+    try { map = JSON.parse(result.slice(mapMarker.length)); } catch { map = null; }
+    if (map && typeof map.title === 'string' && Array.isArray(map.branches)) {
+      return { open: true, content: el('div', { class: 'mind-map' },
+        el('div', { class: 'mind-map-root', text: map.title }),
+        el('div', { class: 'mind-map-branches' }, map.branches.slice(0, 8).map(branch =>
+          el('section', { class: 'mind-map-branch' },
+            el('h4', { text: String(branch.title ?? 'Branch') }),
+            el('ul', {}, (Array.isArray(branch.items) ? branch.items : []).slice(0, 12)
+              .map(item => el('li', { text: String(item) }))))))) };
+    }
+  }
+  const text = result.startsWith(localMarker) ? result.slice(localMarker.length) : result;
+  return { open: result.startsWith(localMarker), content: el('p', { class: 'prewrap', text }) };
+}
+
 function renderInbox() {
   const items = data?.inbox ?? [];
   inboxCount.textContent = String(items.length);
   inboxList.replaceChildren(...(items.length ? items.map(item => {
     const projectName = data.projects?.find(project => project.id === item.projectId)?.name ?? 'Unsorted';
     const work = item.work;
+    const rendered = work?.status === 'ready' ? renderWorkProduct(work.result) : null;
     return el('li', { class: 'captured-item' },
       el('span', { class: 'capture-note', text: item.title }),
       el('span', { class: 'list-subtitle', text: projectName + ' · ' + when(item.createdAt) }),
       work?.status === 'ready'
-        ? el('details', { class: 'work-result' }, el('summary', { text: 'Draft ready — review result' }),
-          el('p', { class: 'prewrap', text: work.result }),
-          el('p', { class: 'muted small', text: 'Prepared by Claude. No external app, source code or files were changed.' }))
+        ? el('details', { class: 'work-result', open: rendered.open }, el('summary', { text: 'Finished — view result' }),
+          rendered.content,
+          el('p', { class: 'muted small', text: 'Prepared inside Alfred. No external app, source code or files were changed.' }))
         : work?.status === 'blocked' || work?.status === 'unconfirmed'
           ? el('p', { class: 'work-blocker', text: (work.result ? work.result + '\n' : '') + work.nextStep +
               (work.status === 'unconfirmed' ? '\nNo further request will be made automatically. Clear this old failure when you have noted it.' : '') })
