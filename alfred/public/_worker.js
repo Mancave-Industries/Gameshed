@@ -892,6 +892,74 @@ function buildBrainRequest(title) {
     /\b(app|site|website|code|source|repository|repo|feature|bug|preview|plugin|workflow|runner|alfred|ui|ux|screen|button|login|database|api|integration)\b/.test(text);
 }
 
+const BUILD_WORKFLOW = '<!-- alfred-workflow:v1 -->\n';
+const BUILD_MAX_MICROUSD = 200000;
+
+function alfredBuildScope(title, projectName) {
+  const text = String(title ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const alfred = projectName === 'Alfred' || /\balfred\b/.test(text);
+  if (!alfred) return null;
+  if (/\b(workflow|runner|github action|approval|execution)\b/.test(text)) return {
+    label: 'Alfred runner and approval flow',
+    paths: ['alfred/public/execution-policy.js', 'alfred/runner/trigger-gate.mjs', 'alfred/runner/run.mjs', 'alfred/test/execution.test.mjs'],
+  };
+  if (/\b(style|styles|css|colour|color|font|spacing|layout)\b/.test(text)) return {
+    label: 'Alfred visual styling', paths: ['alfred/public/styles.css', 'alfred/test/ui.test.mjs'],
+  };
+  if (/\b(html|markup|page structure|form)\b/.test(text)) return {
+    label: 'Alfred page structure', paths: ['alfred/public/index.html', 'alfred/test/ui.test.mjs'],
+  };
+  if (/\b(voice|ui|ux|screen|button|interface|mobile|navigation|display|card|panel)\b/.test(text)) return {
+    label: 'Alfred interface behaviour', paths: ['alfred/public/app.js'],
+  };
+  return null;
+}
+
+function buildWorkflowTitle(title) {
+  const clean = String(title ?? '').replace(/\s+/g, ' ').trim();
+  return ('Build Alfred: ' + clean).slice(0, 140).trim();
+}
+
+async function prepareAlfredBuild(token, note, projectName) {
+  const scope = alfredBuildScope(note.title, projectName);
+  if (!scope) return null;
+  const ref = await github(token, '/repos/' + OWNER + '/Gameshed/git/ref/heads/main');
+  const sha = ref?.object?.sha;
+  if (!/^[a-f0-9]{40}$/.test(sha ?? '')) throw new Error('Alfred could not confirm the current Gameshed main revision.');
+  const title = buildWorkflowTitle(note.title);
+  const paths = scope.paths.join(', ');
+  const proposal = {
+    project: 'Alfred', title,
+    summary: 'Alfred recognised this as a build request and scoped it to ' + scope.label + ' at Gameshed main ' + sha.slice(0, 12) + '. It is ready for the controlled runner. The only pause is the new paid model grant; no code or external app has changed yet.',
+    options: [
+      {
+        id: 'build-scoped-change', label: 'Build this scoped change',
+        detail: 'Recommended. Allow one bounded runner job, maximum US$0.20, limited to: ' + paths + '. The Alfred test suite must pass at the reviewed revision. The result stays on an isolated review branch with evidence and rollback; it does not deploy to production.',
+        execution: { repo: 'Gameshed', sha, paths: scope.paths, profile: 'alfred-node', maxMicrousd: BUILD_MAX_MICROUSD },
+      },
+      {
+        id: 'do-not-build', label: 'Do not build it',
+        detail: 'Keep the captured instruction but do not start a runner job or spend anything.',
+      },
+    ],
+  };
+  const issues = await github(token, WORKFLOW_REPO + '?state=all&per_page=100&sort=updated');
+  if (issues.length === 100) throw new Error('Build-request history requires review before another issue is created.');
+  const duplicate = issues.find(issue => issue.user?.id === OWNER_ID && issue.state === 'open' &&
+    issue.title === '[Alfred workflow] ' + title &&
+    workflowPayload(issue.body, WORKFLOW_MARKER)?.project === 'Alfred');
+  const issue = duplicate ?? await github(token, WORKFLOW_REPO, 'POST', {
+    title: '[Alfred workflow] ' + title,
+    body: BUILD_WORKFLOW + JSON.stringify(proposal, null, 2),
+  });
+  const read = await github(token, WORKFLOW_REPO + '/' + issue.number);
+  const verified = workflowProposal(read);
+  if (!verified || verified.project !== 'Alfred' || verified.title !== title) {
+    throw new Error('GitHub did not confirm the scoped Alfred build request.');
+  }
+  return { issue: read.number, sha, scope };
+}
+
 function localBrainDeliverable(kind, projects, brain = []) {
   if (kind === 'project-status') {
     return '<!-- alfred-local:v1 -->\nYour projects\n\n' + projects.map(project =>
@@ -1050,9 +1118,15 @@ async function workOnBrainItem(request, token, env, id) {
     return json({ work: (await brainRows(env)).find(item => item.id === id)?.work });
   }
   if (buildBrainRequest(note.title)) {
+    const prepared = await prepareAlfredBuild(token, note, projectName);
+    if (prepared) return finish('ready',
+      'Alfred prepared build request #' + prepared.issue + ' for ' + prepared.scope.label + ' at revision ' + prepared.sha.slice(0, 12) + '. No code changed and no paid call started.',
+      'The exact bounded runner grant is now in Needs Me. Approve it there to start the build.');
     return finish('blocked',
-      'No repository or external app was changed. This is a build request, not a text-only task.',
-      'Run it through an Alfred workflow with the exact repository, revision, allowed files, checks and spending ceiling. Alfred’s GitHub runner can then build on an isolated branch and return evidence.');
+      'No repository or external app was changed. Alfred could not safely determine one bounded Alfred file scope from this instruction.',
+      projectName !== 'Alfred' && !/\balfred\b/i.test(note.title)
+        ? 'Development outside Alfred is paused. Name Alfred explicitly when the change is for Alfred itself.'
+        : 'Name the part to change: interface, voice, styling, page structure, workflow or runner.');
   }
   // The ChatGPT plugin is NOT a GitHub repository. This Worker has no
   // Plugin Creator credential and must not pretend to have edited it.

@@ -90,7 +90,7 @@ function fakeGithub(repos, log) {
   let nextComment = 7_000_000_000;
   const reply = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
   const issueJson = (issue) => ({ user: OWNER, comments: 0, updated_at: '2026-11-11T09:00:00Z', created_at: '2026-11-08T00:00:00Z', ...issue });
-  const refs = new Map();
+  const refs = new Map([['heads/main', 'a'.repeat(40)]]);
   const commits = new Map();
   return async (url, init = {}) => {
     const method = (init.method ?? 'GET').toUpperCase();

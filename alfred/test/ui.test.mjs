@@ -395,7 +395,7 @@ test('iPhone mind-map request becomes a visual result and never a Needs me block
   assert.deepEqual(errors, []);
 });
 
-test('the instruction box explains build limits before sending and voice can dictate', { skip: !playwright }, async t => {
+test('the instruction box explains automatic safe build routing and voice can dictate', { skip: !playwright }, async t => {
   const { h, page, errors } = await open(t, {
     keepWorkflowProjects: true,
     anthropic: async () => { throw new Error('Build capture must not call the text model'); },
@@ -415,12 +415,15 @@ test('the instruction box explains build limits before sending and voice can dic
   await page.getByRole('button', { name: 'Speak instruction' }).click();
   assert.equal(await page.locator('#capture-text').inputValue(), 'Build a new Alfred voice feature');
   await page.locator('#action-preview').getByText('BUILD / CHANGE REQUEST', { exact: true }).waitFor();
-  await page.locator('#action-preview').getByText(/cannot silently edit a repository/).waitFor();
-  await page.getByRole('button', { name: 'Record build request' }).click();
-  await page.locator('#capture-status').getByText('Blocked — see what is needed below.').waitFor();
+  await page.locator('#action-preview').getByText(/Safe work starts through the controlled runner/).waitFor();
+  await page.getByRole('button', { name: 'Start build request' }).click();
+  await page.locator('#capture-status').getByText('Result finished. Open it below.').waitFor();
   await page.locator('#inbox-drawer').evaluate(el => { el.open = true; });
-  await page.getByText(/No repository or external app was changed/).waitFor();
-  await page.locator('#attention-card').getByText('No decision waiting for you', { exact: true }).waitFor();
+  await page.getByText('Finished — view result', { exact: true }).click();
+  await page.getByText(/prepared build request/).waitFor();
+  await page.locator('#attention-card').getByRole('heading', { name: /Build Alfred:/ }).waitFor();
+  await page.locator('#attention-card').getByText('Implementation details', { exact: true }).click();
+  await page.locator('#attention-card').getByText(/maximum US\$0\.20/).waitFor();
   assert.equal(h.anthropicCalls.length, 0);
   assert.deepEqual(errors, []);
 });
