@@ -422,6 +422,7 @@ test('the instruction box explains automatic safe build routing and voice can di
   await page.getByText('Finished — view result', { exact: true }).click();
   await page.getByText(/prepared build request/).waitFor();
   await page.locator('#attention-card').getByRole('heading', { name: /Build Alfred:/ }).waitFor();
+  await page.locator('#attention-card').getByText('Implementation details', { exact: true }).click();
   await page.locator('#attention-card').getByText(/maximum US\$0\.20/).waitFor();
   assert.equal(h.anthropicCalls.length, 0);
   assert.deepEqual(errors, []);
