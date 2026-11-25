@@ -117,7 +117,7 @@ test('project status and architecture requests are delivered locally without ano
   assert.equal(h.db.prepare('SELECT committed_microusd FROM ask_alfred_budget WHERE id=1').get().committed_microusd, 0);
 });
 
-test('an ordinary build sentence never pretends the text-only capture box changed code', async t => {
+test('an Alfred build sentence creates one exact bounded runner proposal without spending', async t => {
   const h = await createHarness({ anthropic: async () => { throw new Error('A build request must use the runner'); } });
   t.after(h.restore);
   const session = await h.signIn();
@@ -126,11 +126,24 @@ test('an ordinary build sentence never pretends the text-only capture box change
   const worked = await h.request('/api/brain/items/' + capture.json.item.id + '/work', { method: 'POST', session,
     body: { confirmCostMicrousd: 30000 } });
   assert.equal(worked.status, 200);
-  assert.equal(worked.json.work.status, 'blocked');
-  assert.match(worked.json.work.result, /No repository or external app was changed/);
-  assert.match(worked.json.work.nextStep, /controlled GitHub runner|GitHub runner/);
+  assert.equal(worked.json.work.status, 'ready');
+  assert.match(worked.json.work.result, /prepared build request/);
+  assert.match(worked.json.work.result, /No code changed and no paid call started/);
+  const issue = h.repos.Gameshed.issues.at(-1);
+  assert.match(issue.title, /^\[Alfred workflow\] Build Alfred:/);
+  const proposal = JSON.parse(issue.body.split('\n').slice(1).join('\n'));
+  assert.equal(proposal.project, 'Alfred');
+  assert.equal(proposal.options[0].execution.repo, 'Gameshed');
+  assert.equal(proposal.options[0].execution.sha, 'a'.repeat(40));
+  assert.deepEqual(proposal.options[0].execution.paths, ['alfred/public/app.js']);
+  assert.equal(proposal.options[0].execution.profile, 'alfred-node');
+  assert.equal(proposal.options[0].execution.maxMicrousd, 200000);
   assert.equal(h.anthropicCalls.length, 0);
   assert.equal(h.db.prepare('SELECT committed_microusd FROM ask_alfred_budget WHERE id=1').get().committed_microusd, 0);
+  const again = await h.request('/api/brain/items/' + capture.json.item.id + '/work', { method: 'POST', session,
+    body: { confirmCostMicrousd: 30000 } });
+  assert.equal(again.json.work.status, 'ready');
+  assert.equal(h.repos.Gameshed.issues.filter(candidate => candidate.title === issue.title).length, 1);
 });
 
 test('existing failed status and mind-map captures recover on refresh without inference', async t => {
