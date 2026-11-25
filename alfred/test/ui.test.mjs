@@ -419,6 +419,7 @@ test('the instruction box explains automatic safe build routing and voice can di
   await page.getByRole('button', { name: 'Start build request' }).click();
   await page.locator('#capture-status').getByText('Result finished. Open it below.').waitFor();
   await page.locator('#inbox-drawer').evaluate(el => { el.open = true; });
+  await page.getByText('Finished — view result', { exact: true }).click();
   await page.getByText(/prepared build request/).waitFor();
   await page.locator('#attention-card').getByRole('heading', { name: /Build Alfred:/ }).waitFor();
   await page.locator('#attention-card').getByText(/maximum US\$0\.20/).waitFor();
