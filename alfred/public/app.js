@@ -132,8 +132,8 @@ function instructionMode(raw = '') {
   if (/\b(build|code|implement|develop|deploy|publish|merge|fix|change|edit|add)\b/.test(text) &&
       /\b(app|site|website|code|source|repository|repo|feature|bug|preview|plugin|workflow|runner|alfred|ui|ux|screen|button|login|database|api|integration)\b/.test(text)) return {
     kind: 'build', label: 'BUILD / CHANGE REQUEST',
-    detail: 'This box will record the request, but it cannot silently edit a repository. A real build runs only through Alfred’s controlled GitHub runner with an exact branch, file scope, tests and evidence.',
-    button: 'Record build request', cost: 'No code changes from this box alone.',
+    detail: 'Alfred will scope the repository, revision, allowed files, tests and rollback. Safe work starts through the controlled runner; Alfred pauses only when it needs new paid spend, production, access, data changes or a real product choice.',
+    button: 'Start build request', cost: 'Scoping is free. Any new paid run is shown before it starts.',
   };
   if (/\b(check|inspect|review|status|update|report|list|verify|audit|what|where|when|why|how)\b/.test(text)) return {
     kind: 'check', label: 'CHECK AND REPORT',
