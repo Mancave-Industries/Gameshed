@@ -1,7 +1,17 @@
 # Automatic execution: implementation and activation
 
-This extends the existing Worker, D1 tables, GitHub issue protocol and mobile
-workspace. It does not replace the interface or disable the existing review loop.
+## Quick start
+
+To enable Claude execution:
+
+1. Owner approves a workflow option in Alfred with `execution` and a maximum USD cost.
+2. The Worker verifies the choice, saves credentials in D1, and starts `.github/workflows/alfred-execute.yml`.
+3. The runner claims the job atomically, downloads the immutable repository archive, and calls Claude once.
+4. Claude edits approved text files and returns a report through the `submit_result` envelope.
+5. Independent verification runs the baseline and candidate in an isolated, network-disabled container.
+6. The gateway publishes a validated next decision with signed evidence.
+
+No merge, deployment or secrets exposure occurs. Each approval is a fresh, single-use grant.
 
 ## What runs
 
